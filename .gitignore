@@ -1,0 +1,10 @@
+/signing.json
+/symserver.json
+getVersion.ps1
+.vscode/launch.json
+/.protected-branches.json
+tests/buildtest/bin/
+tests/buildtest/inc/
+tests/buildtest/logs/
+tests/buildtest/driver/x64
+

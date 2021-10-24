@@ -1,0 +1,8 @@
+{
+    "append" : "false",
+    "regex"  : "true",
+    "protected" : [
+        "main",
+        "^feature-*"
+    ]
+}

@@ -1,0 +1,8 @@
+{
+    "append" : "false",
+    "regex"  : "false",
+    "protected" : [
+        "main",
+        "test-branch"
+    ]
+}

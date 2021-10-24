@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<PropertyGroup>
+    <OutDir>$(ProjectRootPath)/bin/$(Configuration)/$(Platform)/</OutDir>
+    <Powershell>%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Executionpolicy Unrestricted -WindowStyle Hidden</Powershell>
+</PropertyGroup>
+
+<PropertyGroup Condition="'$(HtsToolsDir)' == ''">
+    <HtsToolsDir>$(ProjectRootPath)/BuildTools</HtsToolsDir>
+</PropertyGroup>
+
+<Import Condition="Exists('$(ProjectRootPath)/inc/version.props')"
+    Project="$(ProjectRootPath)/inc/version.props" />
+
+<PropertyGroup Condition="'$(BuildString)' == ''">
+    <BuildOptions></BuildOptions>
+</PropertyGroup>
+<PropertyGroup Condition="'$(BuildString)' != ''">
+    <BuildOptions>-BuildString $(BuildString)</BuildOptions>
+</PropertyGroup>
+<PropertyGroup Condition="'$(BuildNumber)' != ''">
+    <BuildOptions>-BuildNumber $(BuildNumber) $(BuildOptions)</BuildOptions>
+</PropertyGroup>
+
+<PropertyGroup Condition="'$(verMajor)' == ''">
+	<verMajor>1</verMajor>
+	<verMinor>0</verMinor>
+	<verRev>0</verRev>
+    <BuildOptions>$(BuildOptions) -generate</BuildOptions>
+</PropertyGroup>
+
+<PropertyGroup>
+    <BuildOptions>$(BuildOptions) -verMajor $(verMajor) -verMinor $(verMinor) -verRev $(verRev)</BuildOptions>
+</PropertyGroup>
+
+<PropertyGroup>
+    <BuildVerString>$(verMajor).$(verMinor).$(verRev).$(BuildNumber)</BuildVerString>
+</PropertyGroup> 
+
+<PropertyGroup Condition="'$(symjson)' == '' and Exists('$(TargetPath)\sympath.json')">
+    <symjson>$(TargetPath)\sympath.json</symjson>
+</PropertyGroup> 
+
+<PropertyGroup Condition="'$(symjson)' == '' and Exists('$(ProjectRootPath)\sympath.json')">
+    <symjson>$(ProjectRootPath)\sympath.json</symjson>
+</PropertyGroup>
+
+<ItemDefinitionGroup>
+    <Inf>
+      <VersionHeaderPath>$(ProjectRootPath)\inc</VersionHeaderPath>
+      <TimeStamp>$(BuildVerString)</TimeStamp>
+      <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
+    </Inf> 
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectRootPath)\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+</ItemDefinitionGroup>
+</Project>

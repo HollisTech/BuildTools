@@ -1,0 +1,6 @@
+{
+    "toolset" : "VS2022",
+    "projectRootPath" : "./buildtest",
+    "htsToolsPath" : "../",
+    "projectPath" : "./buildtest/driver"
+}

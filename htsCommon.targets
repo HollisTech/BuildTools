@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" >
+
+  <Target Name="VersionFiles" BeforeTargets="PreBuildEvent">
+    <Exec Command="$(PowerShell) -command &quot;&amp; { $(HtsToolsDir)\versionfiles.ps1 -incPath &apos;$(ProjectRootPath)\inc&apos; $(BuildOptions) } &quot;"/> 
+  </Target>
+
+  <Target Name="CreateCab" AfterTargets="Build" Condition="'@(CabFiles)' != ''">
+    <Exec Command="$(PowerShell) -command &quot;&amp; { $(HtsToolsDir)\createCab.ps1 -name $(ProjectName) -path &apos;$(OutDir)$(ProjectName)&apos; -files @(CabFiles,',') } &quot;" />
+  </Target>
+
+  <Target Name="SignCabs">
+    <ItemGroup>
+      <CabsToSign Include="$(OutDir)$(ProjectName)/*.cab" />
+    </ItemGroup>
+    <Exec Condition="'@(CabsToSign)'!=''" Command="$(PowerShell) -command &quot;&amp; { $(HtsToolsDir)\signobject.ps1 -noisy -files @(CabsToSign,',') } &quot;" />
+  </Target>
+
+  <Target Name="StoreSymbols" AfterTargets="Build" Condition="'$(symjson)' != ''">
+    <PropertyGroup>
+        <symstore>$(WindowsKitsRoot)Debuggers\x64\symstore.exe</symstore>
+    </PropertyGroup>
+    
+    <Exec Command="$(PowerShell) -command &quot;&amp; { $(HtsToolsDir)\updatesyms.ps1 -binaryPath &apos;$(OutDir)&apos; -symstore &apos;$(symstore)&apos; -configFile &apos;$(symjson)&apos; } &quot;" />
+  </Target>
+  
+</Project> 
