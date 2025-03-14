@@ -18,9 +18,9 @@ $verBuildString = "#define VER_BUILD_STRING"
 if ([string]::IsNullOrEmpty($BuildString)) {
     $BuildString = headSha
     log "build string $BuildString"
-    if (! [string]::IsNullOrEmpty($BuildString)) {
-        $verBuildString = "#define VER_BUILD_STRING `"-$BuildString`""
-    }
+}
+if (! [string]::IsNullOrEmpty($BuildString)) {
+    $verBuildString += " `"-$BuildString`""
 }
 
 $contents=@"

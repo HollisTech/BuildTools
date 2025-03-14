@@ -477,17 +477,6 @@ function doBuild
     (Receive-Job -Job $Job) -split "`n"  
 }
 
-function ObjectProperty {
-    param(
-        [PSCustomObject] $obj,
-        [string] $key
-    )
-    $val = $null
-    if ($obj.Properties.Name -contains $key) {
-        $val = $obj.$key
-    }
-    $val
-}
 Export-ModuleMember -Function filterWarnings
 Export-ModuleMember -function Invoke-CmdScript
 Export-ModuleMember -function getVsCmdScripts

@@ -70,11 +70,12 @@ try
         $params = (Get-Content -Raw $jsonFile) | ConvertFrom-Json
         $ParameterList = (Get-Command -Name $MyInvocation.InvocationName).Parameters
         foreach ($key in  $ParameterList.Keys) {
-            if (($val = ObjectProperty -obj $params -key $key)) {
+            if ($params.PSobject.Properties[$key]) {                
+                $val = $params.$key
                 $var = Get-Variable -Name $key 
-                $var.value = $val
+                $var.value =$val
                 log "setting $($var.name) to $val from JSON file"
-            }
+            } 
         }
     }
     if (-not [string]::IsNullOrEmpty($projectRootPath)) {
