@@ -2,6 +2,7 @@
 $root = $PSScriptRoot
 $buildModule = "$root\..\buildFuncs.psm1"
 Import-Module -Name $buildModule -force
+Push-Location $root
 try {
     log "build number test"
     $num = buildNumber -jsonFile "$root\protected-test1.json" -allowModified
@@ -29,7 +30,7 @@ try {
             Remove-Item -recurse -path $p -force
         }
     }
-    ../build.ps1 -jsonfile ./buildtest/build.json
+    ../build.ps1 -jsonfile "$root/buildtest/build.json"
     if ($LASTEXITCODE -ne 0) {
         write-error "Build exit code $LASTEXITCODE "
     }
@@ -46,4 +47,5 @@ finally {
     if (Get-Module -Name buildFuncs) {
         Remove-Module -name buildFuncs
     }
+    Pop-Location
 }

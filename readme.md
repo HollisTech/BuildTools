@@ -147,6 +147,7 @@ Accept wildcard characters?  false
 ## OUTPUTS
 
 ## NOTES
+Powershell 7 is assumed. These scripts may or may not work correctly with earlier versions of powershell.
 
 
 ## EXAMPLES

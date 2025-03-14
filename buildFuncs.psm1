@@ -496,3 +496,4 @@ Export-ModuleMember -function log
 Export-ModuleMember -function buildNumber
 Export-ModuleMember -function headSha
 Export-ModuleMember -function isGitRepo
+Export-ModuleMember -function ObjectProperty
