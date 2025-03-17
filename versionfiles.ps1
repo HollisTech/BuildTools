@@ -145,10 +145,13 @@ try {
     [string] $current = ""
     if (test-path "$($incPath)\ntverp.h") {
         $current = (get-content "$($incPath)\ntverp.h" -raw)
-        $current = $current.Trim()
+        if ($current.Length) {
+            $current = $current.Trim()
+        }
     }
     $tempContents = $contents.Trim()
-    if ($current -cne $tempContents) {
+    if (($current.Length -ne $tempContents.Length) -or ($current -cne $tempContents)) {
+        log "creating $($incPath)\ntverp.h"
         $contents | set-content "$($incPath)\ntverp.h"
     }
     $mutexHeld = $false
