@@ -2,6 +2,7 @@
 $root = $PSScriptRoot
 $buildModule = "$root\..\buildFuncs.psm1"
 Import-Module -Name $buildModule -force
+$status = $true
 Push-Location $root
 try {
     log "build number test"
@@ -11,6 +12,7 @@ try {
         log "regex test passed"
     } else {
         write-error "regex test failed"
+        $status = $false
     }
     $num = buildNumber -jsonFile "$root\protected-test2.json" -allowModified
     log "buildnumber returned $num"
@@ -18,6 +20,7 @@ try {
         log "explicit match test passed"
     } else {
         write-error "explicit test failed"
+        $status = $false
     }
     log "build number test passed"
 
@@ -33,15 +36,24 @@ try {
     ../build.ps1 -jsonfile "$root/buildtest/build.json"
     if ($LASTEXITCODE -ne 0) {
         write-error "Build exit code $LASTEXITCODE "
+        $status = $false
     }
     foreach ($dir in $buildDirs) {
         $p = "./buildtest/$($dir)"
         if (!(test-path $p)) {
             write-error "build expected artifact directory $p"
+            $status = $false
         }
-    }    
+    }
+    # build.ps1 unloads this module!
     Import-Module -Name $buildModule -force
-    log "JSON build test passed"
+    if ($status) {
+        log "JSON build test passed"
+        exit 0
+    } else {
+        log "JSON build test failed"
+        exit 1
+    }
 }
 finally {
     if (Get-Module -Name buildFuncs) {
