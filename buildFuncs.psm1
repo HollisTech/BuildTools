@@ -252,7 +252,7 @@ Function buildNumber
                 log "generated git build number is $n"
             }
         } else {
-            log "branch: $curBranch in repo $repoPath has modified uncommitted files, using build number 0"
+            log "branch: $curBranch in repo $repoPath has modified uncommitted files, using build number $n"
         }
     }
     $n
