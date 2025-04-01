@@ -18,6 +18,10 @@
 <PropertyGroup Condition="'$(BuildString)' != ''">
     <BuildOptions>-BuildString $(BuildString)</BuildOptions>
 </PropertyGroup>
+
+<Import Condition="'$(BuildNumber)' == '' and Exists('$(ProjectRootPath)/inc/BuildNumber.props')"
+    Project="$(ProjectRootPath)/inc/BuildNumber.props" />
+
 <PropertyGroup Condition="'$(BuildNumber)' != ''">
     <BuildOptions>-BuildNumber $(BuildNumber) $(BuildOptions)</BuildOptions>
 </PropertyGroup>
