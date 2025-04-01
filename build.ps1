@@ -40,7 +40,7 @@ param(
     [ValidateSet("Quiet","Normal","Verbose")]
     [string]$consoleLogLevel = "Quiet",
     # the build number for this build, set as a msbuild property named 'buildNumber'.
-    [int]$buildNumber=0, 
+    [int]$buildNumber=-1, 
     # a wrapper command or script, it will be passed the msbuild command line.
     [string]$wrapper=$null,
     # generate an msbuild detailed summary
@@ -168,6 +168,12 @@ try
             $consolelog += "verbosity:diagnostic"
             $msVerbosity = "/verbosity:diagnostic"
         }
+    }
+    if ($buildNumber -lt 0) {
+        $buildNumber = buildNumber
+        log "No build number specified, using $buildNumber"
+    } else {
+        log "Using specified build number: $buildNumber"
     }
       
     $msbuild = "msbuild.exe"
