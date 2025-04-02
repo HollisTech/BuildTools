@@ -253,7 +253,7 @@ Function buildNumber
                 log "branch: $curBranch in repo $repoPath not in protected branches $($branches -Join ";"), using build number 0"
             }
             if ($generate) {         
-                $n = $status["commits"]
+                $n = git rev-list --count HEAD
                 log "generated git build number is $n"
             }
         } else {
