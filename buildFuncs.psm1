@@ -145,7 +145,12 @@ function gitStats {
     $output = git status --porcelain 
     $modified = $output.count
     $branch = currentBranch
-    $commits = git rev-list --count HEAD ^$branch
+    if ($null -eq $branch) {
+        $branch = "DETACHED"
+        $commits = git rev-list --count HEAD ^origin
+    } else {
+        $commits = git rev-list --count HEAD ^$branch
+    }
     
     return @{"modified" = $modified;
              "branch" = $branch;
@@ -248,7 +253,7 @@ Function buildNumber
                 log "branch: $curBranch in repo $repoPath not in protected branches $($branches -Join ";"), using build number 0"
             }
             if ($generate) {         
-                $n = git rev-list --count HEAD
+                $n = $status["commits"]
                 log "generated git build number is $n"
             }
         } else {

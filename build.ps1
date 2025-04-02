@@ -199,7 +199,7 @@ try
         $props = $properties -join ';'
         $msbuildArgs += "/p:$($props)"
     }
-
+    $err = 0
     $totalRunStart = Get-Date  
     $dashes = "====================="
     foreach ($config in $configurations) {
@@ -270,6 +270,7 @@ try
     }
     $totalRunEnd = Get-Date
     Write-Output (" Total Build Time {0:g} " -f $($totalRunEnd - $totalRunStart))
+    exit $err
 
 }
 catch {
