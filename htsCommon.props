@@ -18,6 +18,10 @@
 <PropertyGroup Condition="'$(BuildString)' != ''">
     <BuildOptions>-BuildString $(BuildString)</BuildOptions>
 </PropertyGroup>
+
+<Import Condition="'$(BuildNumber)' == '' and Exists('$(ProjectRootPath)/inc/BuildNumber.props')"
+    Project="$(ProjectRootPath)/inc/BuildNumber.props" />
+
 <PropertyGroup Condition="'$(BuildNumber)' != ''">
     <BuildOptions>-BuildNumber $(BuildNumber) $(BuildOptions)</BuildOptions>
 </PropertyGroup>
@@ -45,11 +49,19 @@
     <symjson>$(ProjectRootPath)\sympath.json</symjson>
 </PropertyGroup>
 
-<ItemDefinitionGroup>
+<ItemDefinitionGroup Condition="'$(BuildNumber)' != '0'">
     <Inf>
       <VersionHeaderPath>$(ProjectRootPath)\inc</VersionHeaderPath>
       <TimeStamp>$(BuildVerString)</TimeStamp>
       <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
+    </Inf> 
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectRootPath)\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+</ItemDefinitionGroup>
+<ItemDefinitionGroup Condition="'$(BuildNumber)' == '0'">
+    <Inf>
+      <VersionHeaderPath>$(ProjectRootPath)\inc</VersionHeaderPath>
     </Inf> 
     <ResourceCompile>
       <AdditionalIncludeDirectories>$(ProjectRootPath)\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

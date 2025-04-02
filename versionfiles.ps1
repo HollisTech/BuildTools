@@ -111,7 +111,7 @@ $verprops = @"
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 <!-- 
-    GENERATED Verions Property File. You should:
+    GENERATED Versions Property File. You should:
         remove this comment block,
         set the version properties appropriately, 
         add and commit this file into your repo. 
@@ -128,11 +128,26 @@ $verprops = @"
 </Project>
 "@
 
+$buildNumberProps = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<!-- 
+    GENERATED buildnumber Property File. 
+    This file should be included in .gitignore to avoid it being checked in.
+    It is recreated for each build.
+-->
+<PropertyGroup>
+    <BuildNumber>$BuildNumber</BuildNumber>
+</PropertyGroup>
+</Project>
+"@
+
 log "include file directory is $incpath"
 if (!(test-path -path $incPath)) {
     $null = mkdir $incPath 
 }
 $verpropfile = "$($incPath)\version.props"
+$buildpropfile = "$($incPath)\buildnumber.props"
 [bool] $createdMutex = $false
 [bool] $mutexHeld = $false
 $mutexName = ($incPath -replace "\\","-") -replace ":",""
@@ -153,6 +168,13 @@ try {
     if (($current.Length -ne $tempContents.Length) -or ($current -cne $tempContents)) {
         log "creating $($incPath)\ntverp.h"
         $contents | set-content "$($incPath)\ntverp.h"
+    }
+    if (!(test-path $buildpropfile)) {
+        log "creating $buildpropfile"
+        $buildNumberProps | Set-Content $buildpropfile
+    } else {
+        log "updating $buildpropfile"
+        $buildNumberProps | Set-Content $buildpropfile -Force
     }
     $mutexHeld = $false
     $lock.ReleaseMutex()
