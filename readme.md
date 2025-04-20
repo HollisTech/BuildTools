@@ -1,9 +1,9 @@
 
 # NAME
-    C:\Users\markr\Documents\docker\echo\BuildTools\build.ps1
+    build.ps1
 ## SYNTAX
 ```powershell
-C:\Users\markr\Documents\docker\echo\BuildTools\build.ps1 [[-toolset] <String>] [[-projectPath] <String>] [[-projectName] <String>] [[-target] <String>] [[-configurations] <String[]>] [[-platforms] <String[]>] [[-properties] <String[]>] [[-logDir] <String>] [[-consoleLogLevel] <String>] [[-buildNumber] <Int32>] [[-wrapper] <String>] [-detailedSummary] [-help] [<CommonParameters>]
+build.ps1 [[-toolset] <String>] [[-projectPath] <String>] [[-projectName] <String>] [[-target] <String>] [[-configurations] <String[]>] [[-platforms] <String[]>] [[-properties] <String[]>] [[-logDir] <String>] [[-consoleLogLevel] <String>] [[-buildNumber] <Int32>] [[-wrapper] <String>] [-detailedSummary] [-help] [<CommonParameters>]
 ```
 ## DESCRIPTION
 Build a visual studio solution or project using the correct environment.
