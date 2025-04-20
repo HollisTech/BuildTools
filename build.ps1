@@ -1,6 +1,95 @@
 <#
-.Description
-    Build a visual studio solution or project using the correct environment.
+
+.SYNOPSIS
+    Build a Visual Studio solution or project using the specified environment.
+
+.DESCRIPTION
+    This script automates the process of building Visual Studio solutions or projects.
+    It supports multiple Visual Studio versions, build configurations, and platforms.
+    The script can also read parameters from a JSON file. All build output is logged.
+
+.PARAMETER jsonFile
+    Path to a JSON file containing parameter values. If provided, the script will
+    use the values from the JSON file to override default or explicitly set parameters.
+
+.PARAMETER projectRootPath
+    The root directory of the project. This is used to determine the location of
+    build tools and logs if not explicitly specified.
+
+.PARAMETER htsToolsPath
+    The path to the build tools directory. If not specified, it defaults to 
+    "$projectRootPath/BuildTools".
+
+.PARAMETER toolset
+    Specifies the Visual Studio toolset to use for the build. Valid options are:
+    "EWDK", "VS2022", "VS2019", "VS2017", "VS2015". Default is "EWDK".
+
+.PARAMETER projectPath
+    The directory where the MSBuild project file to be built is located. Defaults to the current directory.
+
+.PARAMETER projectName
+    The name of the MSBuild project file to be built. If not specified, the script
+    will attempt to find the first MSBuild-compatible project file in the projectPath.
+
+.PARAMETER target
+    The build target to execute. Default is "Build".
+
+.PARAMETER configurations
+    An array of build configurations to be built (e.g., "Release", "Debug"). 
+    Default is "Release". Use "all" to build both "Release" and "Debug".
+
+.PARAMETER platforms
+    An array of build platforms to be built (e.g., "x64", "x86"). Default is "x64".
+    Use "all" to build for all supported platforms.
+
+.PARAMETER properties
+    An array of arbitrary build properties in the format "name=value" to be passed to MSBuild.
+
+.PARAMETER logDir
+    The directory path where build log files will be stored. If not specified, it defaults to
+    "$projectRootPath/logs" or "./logs" if projectRootPath is not set.
+
+.PARAMETER consoleLogLevel
+    Specifies the verbosity of the console log output from MSBuild. Valid options are:
+    "Quiet", "Normal", "Verbose". Default is "Quiet".
+
+.PARAMETER buildNumber
+    The build number for this build. This is passed as an MSBuild property named 'BuildNumber'.
+    Default is 0.
+
+.PARAMETER wrapper
+    A wrapper command or script to be used. The wrapper will be passed the MSBuild command line.
+
+.PARAMETER detailedSummary
+    Switch to generate a detailed summary of the MSBuild process.
+
+.PARAMETER help
+    Switch to display detailed help for this script.
+
+.EXAMPLE    
+    .\build.ps1 
+    Builds the project or solution located in the current directory using the default toolset (EWDK), 
+    with the "Release" configuration and "x64" platform.
+
+.EXAMPLE
+    .\build.ps1 -toolset "VS2022" 
+    Builds the project or solution located in the current directory using Visual Studio 2022, 
+    with the "Release" configuration and "x64" platform.
+
+.EXAMPLE
+    .\build.ps1 -jsonFile "buildParams.json"
+    Builds the project using parameters specified in the "buildParams.json" file.
+    The json file format expected is a simple key-value pair structure. 
+    The keys should match the parameter names of this script.
+
+.NOTES
+    - Ensure that the required Visual Studio toolset is installed and accessible.
+    - The script assumes it is located in its repository directory, and uses, at minimum buildfuncs.psm1.
+    - Configuring this repository as a submodule in your project is the simple way to use this script.
+    - Specifying the EWDK toolset will use the first mounted EWDK volume found, 
+      unless the environment variable EWDKRoot is set. The path set in EWDKRoot will be used instead.
+    - This script is intended for use in a Windows environment with Powershell 7 or later. 
+      It may or may not work correctly in earlier versions of Powershell.
 #>
 
 [CmdletBinding()]
