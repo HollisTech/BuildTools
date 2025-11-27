@@ -149,12 +149,19 @@ if (!(test-path -path $incPath)) {
 $verpropfile = "$($incPath)\version.props"
 $buildpropfile = "$($incPath)\buildnumber.props"
 [bool] $createdMutex = $false
-[bool] $mutexHeld = $false
 $mutexName = ($incPath -replace "\\","-") -replace ":",""
 $lock = new-object System.Threading.Mutex($false, $mutexName, [ref] $createdMutex);
 try {
-    $mutexHeld = $lock.WaitOne()
+    if (!$createdMutex) {
+        $lock.WaitOne()
+        log "mutex acquired after WaitOne."
+        $mutexHeld = $true
+    } else {
+        log "created mutex $mutexName"
+        $mutexHeld = $true
+    }
     if ($generateProps -and !(test-path $verpropfile)) {
+        log "creating  $verpropfile"
         $verprops | Set-Content $verpropfile
     }
     [string] $current = ""
@@ -173,8 +180,15 @@ try {
         log "creating $buildpropfile"
         $buildNumberProps | Set-Content $buildpropfile
     } else {
-        log "updating $buildpropfile"
-        $buildNumberProps | Set-Content $buildpropfile -Force
+        $current = (get-content  $buildpropfile -raw)
+        if ($current.Length) {
+            $current = $current.Trim()
+        }
+        $buildNumberProps = $buildNumberProps.Trim()
+        if (($current.Length -ne $buildNumberProps.Length) -or ($current -cne $buildNumberProps)) {
+            log "updating $buildpropfile"
+            $buildNumberProps | Set-Content $buildpropfile -Force
+        }
     }
     $mutexHeld = $false
     $lock.ReleaseMutex()
@@ -182,8 +196,12 @@ try {
 catch {
 }
 finally {
-    if ($mutexHeld) {
-        $lock.ReleaseMutex();
+   if ($lock -and $lock.WaitOne(0)) {
+        $lock.ReleaseMutex()
+        Write-Host "Mutex released."
+    }
+    if ($lock) {
+        $lock.Dispose()
     }
 }
 $verfile = "$incPath\version.h"
