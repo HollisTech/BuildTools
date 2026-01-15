@@ -155,10 +155,8 @@ try {
     if (!$createdMutex) {
         $lock.WaitOne()
         log "mutex acquired after WaitOne."
-        $mutexHeld = $true
     } else {
         log "created mutex $mutexName"
-        $mutexHeld = $true
     }
     if ($generateProps -and !(test-path $verpropfile)) {
         log "creating  $verpropfile"
@@ -174,8 +172,8 @@ try {
     $tempContents = $NtVerpContents.Trim()
     if (($current.Length -ne $tempContents.Length) -or ($current -cne $tempContents)) {
         log "creating $($incPath)\ntverp.h current: $($current.Length) new: $($tempContents.Length)"
-        Remove-Item $incPath\ntverp.h -Force
-        $tempContents |  Set-Content "$($incPath)\ntverp.h" -Force        
+        Remove-Item $incPath\ntverp.h -Force -ErrorAction SilentlyContinue   
+        $tempContents |  Set-Content "$($incPath)\ntverp.h" -Force   
         $current2 = (get-content "$($incPath)\ntverp.h" -raw)
         if ($current2.Length) {
             $current2 = $current2.Trim()
@@ -199,17 +197,13 @@ try {
             $buildNumberProps | Set-Content $buildpropfile -Force
         }
     }
-    $mutexHeld = $false
     $lock.ReleaseMutex()
+    log "mutex released."
 }
 catch {
     Write-Output $_ | Format-List * -Force | Out-String
 }
 finally {
-   if ($lock -and $lock.WaitOne(0)) {
-        $lock.ReleaseMutex()
-       log "Mutex released."
-    }
     if ($lock) {
         $lock.Dispose()
     }
