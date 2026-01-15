@@ -23,7 +23,7 @@ if (! [string]::IsNullOrEmpty($BuildString)) {
     $verBuildString += " `"-$BuildString`""
 }
 
-$contents=@"
+$NtVerpContents=@"
 #pragma once
 //
 // Generated file: DO NOT EDIT!
@@ -150,7 +150,7 @@ $verpropfile = "$($incPath)\version.props"
 $buildpropfile = "$($incPath)\buildnumber.props"
 [bool] $createdMutex = $false
 $mutexName = ($incPath -replace "\\","-") -replace ":",""
-$lock = new-object System.Threading.Mutex($false, $mutexName, [ref] $createdMutex);
+$lock = new-object System.Threading.Mutex($true, $mutexName, [ref] $createdMutex);
 try {
     if (!$createdMutex) {
         $lock.WaitOne()
@@ -171,10 +171,19 @@ try {
             $current = $current.Trim()
         }
     }
-    $tempContents = $contents.Trim()
+    $tempContents = $NtVerpContents.Trim()
     if (($current.Length -ne $tempContents.Length) -or ($current -cne $tempContents)) {
-        log "creating $($incPath)\ntverp.h"
-        $contents | set-content "$($incPath)\ntverp.h"
+        log "creating $($incPath)\ntverp.h current: $($current.Length) new: $($tempContents.Length)"
+        Remove-Item $incPath\ntverp.h -Force
+        $tempContents |  Set-Content "$($incPath)\ntverp.h" -Force        
+        $current2 = (get-content "$($incPath)\ntverp.h" -raw)
+        if ($current2.Length) {
+            $current2 = $current2.Trim()
+        }
+        log "New $($incPath)\ntverp.h length  $($current2.Length)"
+        if ($current2.Length -ne $tempContents.Length) {
+            log "Error truncated $($incPath)\ntverp.h now: $($current2.Length)  tempContents: $($tempContents.Length)"
+        }
     }
     if (!(test-path $buildpropfile)) {
         log "creating $buildpropfile"
@@ -194,11 +203,12 @@ try {
     $lock.ReleaseMutex()
 }
 catch {
+    Write-Output $_ | Format-List * -Force | Out-String
 }
 finally {
    if ($lock -and $lock.WaitOne(0)) {
         $lock.ReleaseMutex()
-        Write-Host "Mutex released."
+       log "Mutex released."
     }
     if ($lock) {
         $lock.Dispose()
