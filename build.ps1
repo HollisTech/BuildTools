@@ -16,7 +16,7 @@ param(
     Specify one of "EWDK","VS2022","VS2019","VS2017","VS2015".
     Default EWDK.
     #>
-    [ValidateSet("EWDK","VS2022","VS2019","VS2017","VS2015")]
+    [ValidateSet("EWDK","VS2026","VS2022","VS2019","VS2017","VS2015")]
     [string]$toolset="EWDK",
     # the directory where the msbuild project file to be built is located
     [Parameter(ValueFromPipeline)]    
@@ -53,7 +53,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = $PSScriptRoot
 $buildModule = "$root\buildFuncs.psm1"
-Import-Module -Name $buildModule
+Import-Module -Name $buildModule -Force
 
 try
 {
@@ -147,10 +147,22 @@ try
     } 
 
     if ("$($platforms[0])" -eq "all") {
-        $platforms = @("x86", "x64")
+        $platforms = @()
         $match = Get-Content "$projectPath\$projectName" | Select-String -Pattern '|Win32' -SimpleMatch
         if ($match) {
-            $platforms = @("Win32", "x64")
+            $platforms += "Win32"
+        }
+        $match = Get-Content "$projectPath\$projectName" | Select-String -Pattern '|x86' -SimpleMatch
+        if ($match) {
+            $platforms += "x86"
+        }
+        $match = Get-Content "$projectPath\$projectName" | Select-String -Pattern '|x64' -SimpleMatch
+        if ($match) {
+            $platforms += "x64"
+        }
+        $match = Get-Content "$projectPath\$projectName" | Select-String -Pattern '|ARM64' -SimpleMatch
+        if ($match) {
+            $platforms += "ARM64"
         }
     }
 

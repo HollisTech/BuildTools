@@ -342,6 +342,12 @@ function getVsCmdScripts
                 }
             }
         }
+        'VS2026' {
+            $defaultProfessionalToolsPath = "${env:ProgramFiles}\Microsoft Visual Studio\18\Professional\Common7\Tools"
+            $defaultEnterpriseToolsPath = "${env:ProgramFiles}\Microsoft Visual Studio\18\Enterprise\Common7\Tools"
+            $defaultCommunityToolsPath = "${env:ProgramFiles}\Microsoft Visual Studio\18\Community\Common7\Tools"
+            $batName = @("vsdevcmd.bat")
+        }
         'VS2022' {
             $defaultProfessionalToolsPath = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\Common7\Tools"
             $defaultEnterpriseToolsPath = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools"
