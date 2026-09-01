@@ -33,6 +33,8 @@ try {
             Remove-Item -recurse -path $p -force
         }
     }
+    # restore nuget packages (required for github)
+    nuget restore .\buildtest\driver\packages.config -PackagesDirectory .\buildtest\driver\packages\ 
     ../build.ps1 -jsonfile "$root/buildtest/build.json"
     if ($LASTEXITCODE -ne 0) {
         write-error "Build exit code $LASTEXITCODE "

@@ -1,5 +1,5 @@
 {
-    "toolset" : "VS2022",
+    "toolset" : "VS2026",
     "projectRootPath" : "./buildtest",
     "htsToolsPath" : "../",
     "projectPath" : "./buildtest/driver"

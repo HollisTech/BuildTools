@@ -7,4 +7,5 @@ tests/buildtest/bin/
 tests/buildtest/inc/
 tests/buildtest/logs/
 tests/buildtest/driver/x64
+tests/buildtest/driver/packages
 

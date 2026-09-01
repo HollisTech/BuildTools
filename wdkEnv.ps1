@@ -1,5 +1,5 @@
 param(    
-    [ValidateSet("EWDK","VS2022","VS2019","VS2017","VS2015")]
+    [ValidateSet("EWDK","VS2026","VS2022","VS2019","VS2017","VS2015")]
     [string]$toolset="EWDK",
     [switch] $noSession
 )
