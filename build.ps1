@@ -63,6 +63,10 @@
 .PARAMETER detailedSummary
     Switch to generate a detailed summary of the MSBuild process.
 
+.PARAMETER noNugetRestore
+    Switch to skip the NuGet package restore step. 
+    If not specified, NuGet packages will be restored if a packages.config file is found in the projectPath.
+
 .PARAMETER help
     Switch to display detailed help for this script.
 
@@ -134,6 +138,8 @@ param(
     [string]$wrapper=$null,
     # generate an msbuild detailed summary
     [switch]$detailedSummary,
+    # don't restore nuget packages.
+    [switch]$noNugetRestore,
     # invoke help for this script.
     [switch]$help
 )
@@ -303,6 +309,19 @@ try
     $err = 0
     $totalRunStart = Get-Date  
     $dashes = "====================="
+
+    if (-not $noNugetRestore) {
+        $packagesConfig = "$projectPath\packages.config"
+        if (Test-Path $packagesConfig) {
+            log "Restoring NuGet packages from $packagesConfig"
+            nuget restore $packagesConfig -PackagesDirectory "$projectPath/packages" 
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "NuGet restore failed with exit code $LASTEXITCODE."
+                exit $LASTEXITCODE
+            }
+        }
+    }
+
     foreach ($config in $configurations) {
         foreach ($platform in $platforms) {
             $logPrefix = "$($target.replace(':','-'))_${config}_$($platform.replace(' ','-'))"
