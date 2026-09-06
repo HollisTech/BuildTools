@@ -1,3 +1,24 @@
+<#
+
+.SYNOPSIS
+    Creates a CAB file from a list of files.
+
+.DESCRIPTION
+    This script creates a CAB file using the makecab command.
+
+.PARAMETER name
+    The name of the CAB file to create.
+
+.PARAMETER path
+    The directory where the CAB file will be created.
+
+.PARAMETER files
+    An array of files to include in the CAB file.
+
+.PARAMETER keepFiles
+    A switch to keep the temporary files used in the CAB creation process.
+
+#>
 param(
     [string] $name,
     [string] $path,

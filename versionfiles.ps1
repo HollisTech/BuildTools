@@ -1,3 +1,23 @@
+<#
+.SYNOPSIS
+    Generate version files for the project.
+.DESCRIPTION
+    This script generates the version files for the project, including the version.props and buildnumber.props files.
+.PARAMETER verMajor
+    The major version number.
+.PARAMETER verMinor
+    The minor version number.
+.PARAMETER verRev
+    The revision version number.
+.PARAMETER BuildNumber
+    The build number.
+.PARAMETER BuildString
+    The build string. Uses the current git sha for HEAD if not specified.
+.PARAMETER incPath
+    The path to the include files where the version files will be generated.    
+.PARAMETER generateProps
+    Whether to generate the property files.
+#>
 param(
     [string] $verMajor=1,
     [string] $verMinor=0,

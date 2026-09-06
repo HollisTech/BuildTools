@@ -1,7 +1,28 @@
 <#
+.SYNOPSIS
     Create a driver project from an existing 
-    sample in the github repo https://github.com/microsoft/Windows-driver-samples.
-    JSON SCHEMA
+    sample in a local copy of the github 
+    repo https://github.com/microsoft/Windows-driver-samples.
+.PARAMETER outputJson
+    Outputs a json schema for the parameters to this script.
+.PARAMETER sourcePath
+    The path to the sample project to copy.
+.PARAMETER targetPath
+    The path to the directory where the new project will be created.
+.PARAMETER targetName
+    The name of the new project.
+.PARAMETER projectRoot
+    The root directory of the project. Defaults to the targetPath.
+.PARAMETER classGuid
+    The class guid for the driver. If not specified, the guid in the sample inf file will be used.
+.PARAMETER className
+    The class name for the driver. If not specified, the class name in the sample inf file will be used.
+.PARAMETER providerString
+    The provider string for the driver. If not specified, the provider string in the sample inf file will be used.  
+.PARAMETER JsonFile
+    A json file containing the parameters for this script. If specified, the parameters in the json file will be used instead of the command line parameters.    
+.NOTES
+    the JSON schema output file makes the parameters for this script clearer.
 #>
 [CmdletBinding()]
 param(
