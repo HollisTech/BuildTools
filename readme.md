@@ -1,7 +1,7 @@
 
 # Build Tools
 
-## Powershell and modules for building Visual Studio based masbuild C/C++ projects, focused on Windows driver projects.
+## Powershell scripts and modules for building Visual Studio based msbuild C/C++ projects, focused on Windows driver projects.
 
 ### Basic Usage
 1. Add this repo as a submodule to a visual studio driver project. 
