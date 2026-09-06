@@ -22,7 +22,7 @@
 
 .PARAMETER toolset
     Specifies the Visual Studio toolset to use for the build. Valid options are:
-    "EWDK", "VS2022", "VS2019", "VS2017", "VS2015". Default is "EWDK".
+    "EWDK", "VS2026" "VS2022", "VS2019", "VS2017", "VS2015". Default is "EWDK".
 
 .PARAMETER projectPath
     The directory where the MSBuild project file to be built is located. Defaults to the current directory.
@@ -106,7 +106,7 @@ param(
     [string] $htsToolsPath = $null,
     <#
     Which visual studio tools to use. 
-    Specify one of "EWDK","VS2022","VS2019","VS2017","VS2015".
+    Specify one of "EWDK","VS2026","VS2022","VS2019","VS2017","VS2015".
     Default EWDK.
     #>
     [ValidateSet("EWDK","VS2026","VS2022","VS2019","VS2017","VS2015")]

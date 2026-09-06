@@ -1,5 +1,26 @@
 <#
-    Add HTS extensions to msbuild project file
+.SYNOPSIS    
+  Add HTS extensions to msbuild project file
+.DESCRIPTION
+    This script adds the HTS extensions to an msbuild project file. 
+    It adds the htsCommon.props and htsCommon.targets imports to the project file. 
+    It also adds a PropertyGroup for ProjectRootPath and HtsToolsDir if they are not already defined in the project file.  
+
+.PARAMETER projectFile
+    The path to the msbuild project file to update.
+.PARAMETER classGuid
+    The class guid for the driver. If not specified, the guid in the sample inf file will be used.
+.PARAMETER className
+    The class name for the driver. If not specified, the class name in the sample inf file will be used.  
+.PARAMETER providerString
+    The provider string for the driver. If not specified, the provider string in the sample inf file will be used.
+.PARAMETER targetName
+    The target name for the driver. If not specified, the target name in the sample inf file will be used.
+.PARAMETER projectRoot
+    The root directory of the project. If not specified, the root directory of the project file will be used.
+.PARAMETER fixSampleInf
+    If specified, the script will update the sample inf file with the class guid, 
+    class name, provider string, and target name specified in the parameters.        
 #>
 param(
     [Parameter(Mandatory=$true)]    

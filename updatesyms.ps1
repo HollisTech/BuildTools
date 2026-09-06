@@ -1,3 +1,25 @@
+<#
+.SYNOPSIS
+    Update symbol store with binary files
+.DESCRIPTION
+    This script updates the symbol store with the specified binary files.
+.PARAMETER binaryPath
+    The path to the binary files to add to the symbol store.
+.PARAMETER configFile
+    The path to the configuration file.
+.PARAMETER symstore
+    The path to the symstore executable.
+.PARAMETER comment
+	A comment to add to the symbol store entry.
+.PARAMETER version
+	The version of the binary files to add to the symbol store.	
+.PARAMETER createJson
+	Creates a sample json config file.
+.PARAMETER WhatIf
+	Displays the command that would be executed without actually executing it.
+.PARAMETER v
+	Displays the output of symstore.exe.
+#>
 param(
 	[Parameter(Mandatory= $true)]
 	[string]$binaryPath,

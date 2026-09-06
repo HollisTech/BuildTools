@@ -1,3 +1,19 @@
+<#
+.SYNOPSIS
+    Sets up the development environment for the Windows Driver Kit (WDK).
+.DESCRIPTION
+    This script sets up a powershell session for the development environment 
+    for the Windows Driver Kit (WDK) by initializing the necessary environment variables and paths.
+    Supports the same set of toolsets as documented for build.ps1.
+    Does not support nuget based WDK/SDK builds.
+.PARAMETER toolset
+    The toolset to use for the development environment.
+.PARAMETER noSession
+    Specifies whether to create a new PowerShell session.
+.NOTES
+    This script is intended to be used in a PowerShell environment.
+      
+#>
 param(    
     [ValidateSet("EWDK","VS2026","VS2022","VS2019","VS2017","VS2015")]
     [string]$toolset="EWDK",
