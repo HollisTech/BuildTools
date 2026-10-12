@@ -67,6 +67,98 @@
     Switch to skip the NuGet package restore step. 
     If not specified, NuGet packages will be restored if a packages.config file is found in the projectPath.
 
+.PARAMETER codeql
+    Switch to run CodeQL static analysis of the driver source code as part of the
+    build. The build is handed to 'codeql database create' as the build command,
+    so the CodeQL C/C++ extractor observes the compilation, and the resulting
+    database is then analyzed into a SARIF file under the log directory.
+
+    The toolset (and so the compiler) is unchanged: this is a build option, not
+    a separate build. Because the extractor only sees compilation that happens
+    while the database is created, the target defaults to Rebuild when this
+    switch is used, and Release is strongly preferred over Debug.
+
+    The CodeQL CLI is looked for in -codeqlCli, then -codeqlHome, then the
+    CODEQL_HOME environment variable, then C:\codeql-home. Use -installCodeQL to
+    download the CLI and the driver query packs if they aren't present yet.
+    See docs/codeql.md, and
+    https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/static-tools-and-codeql.
+
+    Expect one msbuild warning from the second Rebuild on - see -codeqlDbDir -
+    and allow it in the project's allowed-warnings.json, which docs/codeql.md
+    shows. The default -target of Rebuild is what makes it appear.
+
+.PARAMETER codeqlHome
+    The directory holding the CodeQL CLI, for example C:\codeql-home.
+    Default is $env:CODEQL_HOME, or C:\codeql-home.
+
+.PARAMETER codeqlCli
+    The path to a specific codeql.cmd to use, overriding -codeqlHome.
+
+.PARAMETER codeqlVersion
+    The CodeQL CLI version to download when -installCodeQL is used. Default
+    2.25.5.
+
+.PARAMETER codeqlPack
+    The driver CodeQL query pack, as 'name@version'. Default
+    "microsoft/windows-drivers@1.10.0", the pack released with the WHCP_26H1 /
+    main branch. The version must be one paired with -codeqlVersion in the
+    Microsoft version matrix.
+
+.PARAMETER codeqlSuite
+    The query suite to run: "recommended" (default), "mustrun", "mustfix", or
+    the path to a .qls file. mustrun is the suite WHCP certification requires;
+    mustfix is the subset that must be clean to pass. Because the queries can
+    produce false positives, failures do not fail the build unless
+    -codeqlFailOnResults is specified.
+
+.PARAMETER codeqlOutputDir
+    The directory for the CodeQL SARIF files and driver verification logs.
+    Default "$logDir/codeql".
+
+.PARAMETER codeqlDbDir
+    The directory the CodeQL databases are created in. Default
+    "$env:LOCALAPPDATA/hts-codeql", outside the source tree, because a database
+    per configuration and platform is several hundred MB and is an artifact
+    rather than source. Note this does not avoid the msbuild Clean warning below:
+    the CodeQL compiler tracer records its own build-tracer.log as a build
+    output, so a later Rebuild's Clean tries to delete that file while the
+    running extractor holds it open, wherever the database lives. Add
+
+        "Microsoft\\.CppClean\\.targets.*build-tracer\\.log.*being used by another process"
+
+    to allowedWarnings in the project's allowed-warnings.json, which is the
+    supported way to keep a known-benign warning from failing the build.
+
+.PARAMETER codeqlJobs
+    The number of threads for the CodeQL import and query evaluation, passed to
+    the CodeQL CLI as -j. Default 0, which uses one thread per core.
+
+.PARAMETER codeqlProjectFile
+    The driver project (.vcxproj) that the analysis belongs to, used when
+    generating a driver verification log. Default is the project file when
+    -projectName is a .vcxproj, otherwise the first .vcxproj with a sibling
+    .inf or .inx file under -projectPath.
+
+.PARAMETER codeqlDriverName
+    The driver name used in the driver verification log, without the .sys or
+    .dll extension. Default is the TargetName of -codeqlProjectFile.
+
+.PARAMETER installCodeQL
+    Switch to download and install the CodeQL CLI and any missing query packs
+    instead of failing when they are not present.
+
+.PARAMETER dvl
+    Switch to also create a driver verification log (DVL) from the SARIF
+    results, using the dvl.exe shipped with the WDK/eWDK. The DVL is what the
+    HLK Static Tools Logo test parses, and is required for WHCP certification.
+    Only meaningful with -codeql.
+
+.PARAMETER codeqlFailOnResults
+    Switch to fail the build when CodeQL reports any finding. Without it CodeQL
+    findings are reported but informational, because the driver query suites
+    contain checks that can report false positives.
+
 .PARAMETER help
     Switch to display detailed help for this script.
 
@@ -86,6 +178,12 @@
     The json file format expected is a simple key-value pair structure. 
     The keys should match the parameter names of this script.
 
+.EXAMPLE
+    .\build.ps1 -toolset "VS2022" -codeql -codeqlSuite recommended -dvl
+    Rebuilds the project or solution in the current directory, runs the CodeQL
+    driver "recommended" query suite over it, writes the SARIF results under
+    ./logs/codeql, and creates a driver verification log from them.
+
 .NOTES
     - Ensure that the required Visual Studio toolset is installed and accessible.
     - The script assumes it is located in its repository directory, and uses, at minimum buildfuncs.psm1.
@@ -94,6 +192,9 @@
       unless the environment variable EWDKRoot is set. The path set in EWDKRoot will be used instead.
     - This script is intended for use in a Windows environment with Powershell 7 or later. 
       It may or may not work correctly in earlier versions of Powershell.
+    - CodeQL databases and SARIF files are written under the log directory. Point
+      -codeqlOutputDir somewhere outside the source tree when the logs directory
+      is not a good place for large artifacts.
 #>
 
 [CmdletBinding()]
@@ -140,6 +241,34 @@ param(
     [switch]$detailedSummary,
     # don't restore nuget packages.
     [switch]$noNugetRestore,
+    # run CodeQL static analysis of the driver source code as part of the build.
+    [switch]$codeql,
+    # the directory holding the CodeQL CLI, default $env:CODEQL_HOME or C:\codeql-home.
+    [string]$codeqlHome=$null,
+    # the path to a specific codeql.cmd to use.
+    [string]$codeqlCli=$null,
+    # the CodeQL CLI version to install with -installCodeQL.
+    [string]$codeqlVersion="2.25.5",
+    # the driver codeql query pack, 'name@version'.
+    [string]$codeqlPack="microsoft/windows-drivers@1.10.0",
+    # the codeql query suite to run: recommended, mustrun, mustfix, or a .qls path.
+    [string]$codeqlSuite="recommended",
+    # the directory for codeql sarif output and driver verification logs, default "$logDir/codeql".
+    [string]$codeqlOutputDir=$null,
+    # the directory the codeql databases are created in, default "$env:LOCALAPPDATA/hts-codeql".
+    [string]$codeqlDbDir=$null,
+    # threads for the codeql import and query evaluation, 0 uses one per core.
+    [int]$codeqlJobs=0,
+    # the driver .vcxproj the analysis belongs to, used for the driver verification log.
+    [string]$codeqlProjectFile=$null,
+    # the driver name used in the driver verification log, without extension.
+    [string]$codeqlDriverName=$null,
+    # install the CodeQL CLI and any missing query packs instead of failing.
+    [switch]$installCodeQL,
+    # also create a driver verification log from the codeql sarif results.
+    [switch]$dvl,
+    # fail the build when codeql reports any result.
+    [switch]$codeqlFailOnResults,
     # invoke help for this script.
     [switch]$help
 )
@@ -282,7 +411,19 @@ try
     } else {
         log "Using specified build number: $buildNumber"
     }
-      
+
+    if ($codeql -and -not $PSBoundParameters.ContainsKey('target')) {
+        <#
+        The CodeQL extractor only observes compilation that happens while the
+        database is created, so an incremental build can produce a database
+        that is missing files, or that contains none at all when msbuild
+        decides everything is already up to date. Rebuild, and this must
+        happen before the msbuild argument line is assembled.
+        #>
+        $target = "Rebuild"
+        log "no -target specified, using Rebuild so that codeql sees every compilation"
+    }
+
     $msbuild = "msbuild.exe"
     #
     # use echoargs to test calling msbuild.
@@ -292,7 +433,6 @@ try
         $msbuild = "$($wrapper) $msbuild"
     }
     $msbuildArgs = @(
-        ".\$projectName",
         "/t:$target",
         $msVerbosity,
         "/noLogo",
@@ -306,9 +446,88 @@ try
         $props = $properties -join ';'
         $msbuildArgs += "/p:$($props)"
     }
+    $projectFile = "$projectPath\$projectName"
     $err = 0
     $totalRunStart = Get-Date  
     $dashes = "====================="
+
+    #
+    # CodeQL setup. The analysis wraps the build rather than following it, so
+    # everything the wrapper needs is resolved once, before the build loop.
+    #
+    $codeQlCmd = $null
+    $codeQlSuiteSpec = $null
+    $codeQlOutput = $null
+    if ($codeql) {
+        $codeQlCmd = getCodeQlCli -codeqlHome $codeqlHome -codeqlCli $codeqlCli -version $codeqlVersion -install:$installCodeQL
+        log "using CodeQL CLI $(getCodeQlVersion -codeqlCli $codeQlCmd) at $codeQlCmd"
+        getCodeQlPacks -codeqlCli $codeQlCmd -packs @($codeqlPack) -install:$installCodeQL
+        $codeQlSuiteSpec = getCodeQlSuiteSpec -pack $codeqlPack -suite $codeqlSuite
+        if ([string]::IsNullOrEmpty($codeqlOutputDir)) {
+            $codeqlOutputDir = "$logDir\codeql"
+        }
+        if (!(test-path $codeqlOutputDir)) {
+            $null = mkdir $codeqlOutputDir
+        }
+        $codeQlOutput = Convert-Path $codeqlOutputDir
+        if ([string]::IsNullOrEmpty($codeqlDbDir)) {
+            # outside the source tree: msbuild's Clean sweeps the project tree
+            # during a Rebuild and objects to the codeql database being there.
+            $codeqlDbDir = "$env:LOCALAPPDATA\hts-codeql"
+        }
+        if (!(test-path $codeqlDbDir)) {
+            $null = mkdir $codeqlDbDir
+        }
+        $codeQlDbRoot = Convert-Path $codeqlDbDir
+        log "codeql databases will be created in $codeQlDbRoot"
+        log "codeql sarif results and dvls will be written to $codeQlOutput"
+        if ($configurations -contains "Debug") {
+            log "note: codeql analysis of the Debug configuration is slow, Release is recommended."
+        }
+        # the driver project, and the driver name, for the verification log
+        if ([string]::IsNullOrEmpty($codeqlProjectFile)) {
+            if ($projectName -match '\.vcxproj$') {
+                $codeqlProjectFile = $projectFile
+            }
+            else {
+                # prefer a project that looks like a driver, ie one with a
+                # sibling inf/inx file.
+                $candidates = @(Get-ChildItem $projectPath -Recurse -Filter "*.vcxproj" -ErrorAction SilentlyContinue)
+                $driverProj = @($candidates | Where-Object {
+                        @(Get-ChildItem $_.DirectoryName -Filter "*.inf" -ErrorAction SilentlyContinue).Count -gt 0 -or
+                        @(Get-ChildItem $_.DirectoryName -Filter "*.inx" -ErrorAction SilentlyContinue).Count -gt 0
+                    })
+                if ($driverProj.Count) {
+                    $codeqlProjectFile = $driverProj[0].FullName
+                }
+                elseif ($candidates.Count) {
+                    $codeqlProjectFile = $candidates[0].FullName
+                }
+            }
+        }
+        if ([string]::IsNullOrEmpty($codeqlDriverName)) {
+            if (-not [string]::IsNullOrEmpty($codeqlProjectFile) -and (test-path $codeqlProjectFile)) {
+                $codeqlDriverName = [System.IO.Path]::GetFileNameWithoutExtension($codeqlProjectFile)
+                $projText = Get-Content -Raw $codeqlProjectFile
+                if ($projText -match '<TargetName>\s*([^<\s]+)') {
+                    $codeqlDriverName = $Matches[1]
+                }
+            }
+            else {
+                $codeqlDriverName = [System.IO.Path]::GetFileNameWithoutExtension($projectName)
+            }
+        }
+        # the source root is the checkout root: the primary source files live
+        # inside it, everything outside it is treated as a library, which is
+        # what the driver query suites expect.
+        if ([string]::IsNullOrEmpty($projectRootPath)) {
+            $sourceRoot = $projectPath
+        }
+        else {
+            $sourceRoot = $projectRootPath
+        }
+        log "codeql source root: $sourceRoot, driver project: $codeqlProjectFile, driver name: $codeqlDriverName"
+    }
 
     if (-not $noNugetRestore) {
         $packagesConfig = "$projectPath\packages.config"
@@ -328,18 +547,32 @@ try
             $log = "$logDir\${logPrefix}.log"
             $errlog = "$logDir\${logPrefix}_errors.log"
             $warnlog = "$logDir\${logPrefix}_warnings.log"
+            $codeQlDb = $null
+            $codeQlSarif = $null
+            if ($codeql) {
+                $codeQlName = "${codeqlDriverName}_${config}_$($platform.replace(' ','-'))"
+                $codeQlDb = "$codeQlDbRoot\${codeQlName}_db"
+                $codeQlSarif = "$codeQlOutput\${codeQlName}.sarif"
+            }
             $buildArgs = @{
                 toolSet = $toolset 
                 consoleLog = $consolelog
                 config = $config 
                 platform = $platform
                 msBuild = $msBuild 
+                projectFile = $projectFile
                 cmdCommon = $msbuildArgs
                 log = $log 
                 errlog = $errlog 
                 warnlog = $warnlog
                 projectPath = $projectPath
                 buildMod = $buildModule
+                codeQlCmd = $codeQlCmd
+                codeQlDb = $codeQlDb
+                codeQlSuite = $codeQlSuiteSpec
+                codeQlSarif = $codeQlSarif
+                sourceRoot = $sourceRoot
+                codeQlJobs = $codeqlJobs
             }
 
             $runStart = Get-Date
@@ -381,6 +614,35 @@ try
                     Remove-item $warnlog
                 }
             }        
+            if ($codeql -and -not [string]::IsNullOrEmpty($codeQlSarif)) {
+                if (Test-Path $codeQlSarif) {
+                    $results = getSarifResults -sarifFile $codeQlSarif
+                    Write-Output " CodeQL $config $platform results: $($results.total) findings ($($results.error) error, $($results.warning) warning, $($results.note) note)"
+                    Write-Output " CodeQL sarif: $codeQlSarif"
+                    $shown = 0
+                    foreach ($rule in $results.rules) {
+                        if ($shown -ge 15) {
+                            Write-Output "  ... $($results.rules.Count - $shown) more rules, see the sarif file"
+                            break
+                        }
+                        Write-Output "  $rule"
+                        $shown++
+                    }
+                    if ($results.total -gt 0 -and $codeqlFailOnResults) {
+                        Write-Output " CodeQL reported $($results.total) findings and -codeqlFailOnResults was specified."
+                        $err = 1
+                    }
+                } else {
+                    Write-Output " CodeQL $config $platform did not produce $codeQlSarif"
+                    $err = 1
+                }
+                if ($dvl -and (Test-Path $codeQlSarif)) {
+                    $dvlFile = "$codeQlOutput\${codeqlDriverName}_${config}_$($platform.replace(' ','-')).DVL.XML"
+                    $null = newDvl -sarifFile $codeQlSarif -driverName $codeqlDriverName `
+                        -architecture $platform -projectFile $codeqlProjectFile -outputFile $dvlFile
+                    Write-Output " driver verification log: $dvlFile"
+                }
+            }
             log $(" $dashes $config $platform $target Complete Status $err Time {0:g} $dashes`n" -f   $($runEnd - $runStart))
             if ($err -ne 0) {
                 Write-Output " There were errors in the $config $platform $target. Error: $err."
