@@ -1,0 +1,14 @@
+{
+    "cli" : {
+        "version" : "2.20.1",
+        "home" : "D:\\codeql-home",
+        "path" : null
+    },
+    "packs" : [
+        "microsoft/windows-drivers@1.8.0",
+        "microsoft/cpp-queries@0.0.4"
+    ],
+    "dvl" : {
+        "path" : "D:\\wdk\\dvl.exe"
+    }
+}

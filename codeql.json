@@ -1,0 +1,14 @@
+{
+    "cli" : {
+        "version" : "2.25.5",
+        "home" : null,
+        "path" : null
+    },
+    "packs" : [
+        "microsoft/windows-drivers@1.10.0",
+        "microsoft/cpp-queries@0.0.5"
+    ],
+    "dvl" : {
+        "path" : null
+    }
+}

@@ -4,7 +4,7 @@ Build a Visual Studio solution or project using the specified environment.
 
 ## Syntax
 ```PowerShell
-build.ps1 [[-jsonFile] <String>] [[-projectRootPath] <String>] [[-htsToolsPath] <String>] [[-toolset] <String>] [[-projectPath] <String>] [[-projectName] <String>] [[-target] <String>] [[-configurations] <String[]>] [[-platforms] <String[]>] [[-properties] <String[]>] [[-logDir] <String>] [[-consoleLogLevel] <String>] [[-buildNumber] <Int32>] [[-wrapper] <String>] [[-codeqlHome] <String>] [[-codeqlCli] <String>] [[-codeqlVersion] <String>] [[-codeqlPack] <String>] [[-codeqlSuite] <String>] [[-codeqlOutputDir] <String>] [[-codeqlJobs] <Int32>] [[-codeqlProjectFile] <String>] [[-codeqlDriverName] <String>] [-codeql] [-installCodeQL] [-dvl] [-codeqlFailOnResults] [-detailedSummary] [-noNugetRestore] [-help] [<CommonParameters>]
+build.ps1 [[-jsonFile] <String>] [[-projectRootPath] <String>] [[-htsToolsPath] <String>] [[-toolset] <String>] [[-projectPath] <String>] [[-projectName] <String>] [[-target] <String>] [[-configurations] <String[]>] [[-platforms] <String[]>] [[-properties] <String[]>] [[-logDir] <String>] [[-consoleLogLevel] <String>] [[-buildNumber] <Int32>] [[-wrapper] <String>] [[-codeqlHome] <String>] [[-codeqlCli] <String>] [[-codeqlVersion] <String>] [[-codeqlPacks] <String[]>] [[-codeqlDvlExe] <String>] [[-codeqlJsonFile] <String>] [[-codeqlSuite] <String>] [[-codeqlOutputDir] <String>] [[-codeqlDbDir] <String>] [[-codeqlJobs] <Int32>] [[-codeqlProjectFile] <String>] [[-codeqlDriverName] <String>] [-codeql] [-installCodeQL] [-dvl] [-codeqlFailOnResults] [-detailedSummary] [-noNugetRestore] [-help] [<CommonParameters>]
 ```
 ## Description
 
@@ -381,8 +381,8 @@ The path to a specific codeql.cmd to use, overriding -codeqlHome.
 
 
 
-The CodeQL CLI version to download when -installCodeQL is used. Default
-2.25.5.
+The CodeQL CLI version to download when -installCodeQL is used. Default is
+the version from the codeql.json tooling description, else 2.25.5.
 
 
 | | |
@@ -395,20 +395,68 @@ The CodeQL CLI version to download when -installCodeQL is used. Default
 | Required: | false |
 
 
-### `-codeqlPack`
+### `-codeqlPacks`
 
 
 
-The driver CodeQL query pack, as 'name@version'. Default
-"microsoft/windows-drivers@1.10.0", the pack released with the WHCP_26H1 /
-main branch. The version must be one paired with -codeqlVersion in the
-Microsoft version matrix.
+Every CodeQL query pack the analysis needs, as 'name[@version]' entries:
+the driver pack and the C/C++ query pack its suites reference by name.
+Default is the pair from codeql.json, else the pair released with the
+WHCP_26H1 / main branch, microsoft/windows-drivers@1.10.0 and
+microsoft/cpp-queries@0.0.5. Versions must be ones paired with
+-codeqlVersion in the Microsoft version matrix.
+
+Both packs have to be named. The driver pack declares
+microsoft/cpp-queries as a dependency (^0.0.5 in its qlpack.yml), but the
+CLI does not resolve a pack's declared dependencies when it downloads it,
+and the driver suites reference the cpp-queries pack by name, so a machine
+installed with only the driver pack fails to resolve any driver suite:
+
+    A fatal error occurred: The QL pack 'microsoft/cpp-queries@0.0.5' which
+    is referenced from ..../windows-driver-suites/mustfix.qls cannot be found.
+
+
+| | |
+|---|---|
+| Type: | String[] |
+| DefaultValue: | microsoft/windows-drivers@1.10.0, microsoft/cpp-queries@0.0.5 |
+| ParameterValue: | String[] |
+| PipelineInput: | false |
+| Position: | named |
+| Required: | false |
+
+
+### `-codeqlDvlExe`
+
+
+
+The path to dvl.exe, used to create the driver verification log with -dvl.
+Default is the dvl.exe of the installed WDK.
 
 
 | | |
 |---|---|
 | Type: | String |
-| DefaultValue: | microsoft/windows-drivers@1.10.0 |
+| ParameterValue: | String |
+| PipelineInput: | false |
+| Position: | named |
+| Required: | false |
+
+
+### `-codeqlJsonFile`
+
+
+
+The codeql.json that describes the three CodeQL components - the CLI, the
+query packs, and dvl.exe. Default is "<projectRootPath>\codeql.json" when
+that exists, else "<htsToolsPath>\codeql.json", so a project can pin its own
+toolchain and otherwise inherit the versions the tools were tested with. An
+explicitly passed parameter overrides the file; see [codeql](codeql.md).
+
+
+| | |
+|---|---|
+| Type: | String |
 | ParameterValue: | String |
 | PipelineInput: | false |
 | Position: | named |
