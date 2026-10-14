@@ -449,6 +449,9 @@ function doBuild
         [string]$codeQlDb = $null,
         [string]$codeQlSuite = $null,
         [string]$codeQlSarif = $null,
+        # where the codeql console output goes: it narrates every step, and every
+        # query it evaluates, which is noise in a build console.
+        [string]$codeQlLog = $null,
         [string]$sourceRoot = $null,
         [int]$codeQlJobs = 0
     )
@@ -462,7 +465,13 @@ function doBuild
         "/flp3:WarningsOnly;LogFile=$warnlog"
     )
 
-    $log,$errlog,$warnlog | foreach-object {    
+    $staleLogs = @($log, $errlog, $warnlog)
+    if (-not [string]::IsNullOrEmpty($codeQlLog)) {
+        # the codeql console log is appended to by both its commands, so start
+        # from an empty one rather than mixing runs.
+        $staleLogs += $codeQlLog
+    }
+    $staleLogs | foreach-object {    
         if (test-path $_) {
             remove-item $_
         }
@@ -492,12 +501,23 @@ function doBuild
                     # 'codeql database create' fails if the database directory exists.
                     remove-item -recurse -force $db
                 }
-                log "codeql database create `"$db`" --language=cpp --source-root `"$($using:sourceRoot)`" --command `"$buildCommand`""
-                & $using:codeQlCmd database create $db --language=cpp "--source-root=$($using:sourceRoot)" "--command=$buildCommand" -j $using:codeQlJobs
+                <#
+                codeql narrates every step it takes, and every query it
+                evaluates, across stdout and stderr: all of it goes to its own
+                log so the build console stays readable. Redirecting here also
+                keeps that output out of the job's error stream, which
+                Receive-Job would otherwise replay in the caller.
+                #>
+                $codeQlOutput = $using:codeQlLog
+                if ([string]::IsNullOrEmpty($codeQlOutput)) {
+                    $codeQlOutput = "$env:TEMP\hts-codeql.log"
+                }
+                log "codeql database create: $(Split-Path -Leaf $db) (progress in $codeQlOutput)"
+                & $using:codeQlCmd database create $db --language=cpp "--source-root=$($using:sourceRoot)" "--command=$buildCommand" -j $using:codeQlJobs *>> $codeQlOutput
                 $ecode = $LASTEXITCODE
                 if ($ecode -eq 0) {
-                    log "codeql database analyze `"$db`" `"$($using:codeQlSuite)`" --format=sarifv2.1.0 --output `"$($using:codeQlSarif)`""
-                    & $using:codeQlCmd database analyze $db "$($using:codeQlSuite)" --format=sarifv2.1.0 "--output=$($using:codeQlSarif)" -j $using:codeQlJobs --rerun
+                    log "codeql database analyze: `"$($using:codeQlSuite)`" (progress in $codeQlOutput)"
+                    & $using:codeQlCmd database analyze $db "$($using:codeQlSuite)" --format=sarifv2.1.0 "--output=$($using:codeQlSarif)" -j $using:codeQlJobs --rerun *>> $codeQlOutput
                     $ecode = $LASTEXITCODE
                 }
             } else {
@@ -522,10 +542,11 @@ function doBuild
     A native tool that writes progress or diagnostics to stderr produces error
     records in the job's error stream, and Receive-Job replays those in the
     caller. In a caller that has $ErrorActionPreference = 'Stop' - this script -
-    that replay is a terminating error, so a merely chatty tool (codeql prints
-    "Initializing database at ..." to stderr) aborts the build even though its
-    exit code is zero. Collect those records and re-emit them as ordinary
-    output; the exit code is what decides success.
+    that replay is a terminating error, so any tool that is merely chatty on
+    stderr aborts the build even though its exit code is zero. (codeql is the
+    worst offender and is now redirected to its own log, but nuget and msbuild
+    are not.) Collect those records and re-emit them as ordinary output; the
+    exit code is what decides success.
     #>
     $lines = @($jobErrors | ForEach-Object { "$_" }) + $jobOutput
     $lines -split "`n"  
@@ -966,6 +987,309 @@ function newDvl {
     Convert-Path $outputFile
 }
 
+#=====================================================================
+# CodeQL build support
+#
+# The CodeQL equivalent of the build loop itself: build.ps1 asks these to
+# resolve the tooling once, to name each configuration's artifacts, and to
+# report and log the results. Keeping them here is what keeps build.ps1 the
+# thin wrapper around doBuild that the rest of it is.
+#=====================================================================
+
+<#
+.SYNOPSIS
+    Resolve everything a CodeQL build needs, once, before the build loop.
+
+.DESCRIPTION
+    Validates the CodeQL CLI and the driver query pack (installing them when
+    -install is specified), resolves the query suite, prepares the output and
+    database directories, and works out which project file and driver name the
+    analysis belongs to.
+
+    Returns a hashtable that build.ps1 passes on to doBuild for each
+    configuration and platform, through getCodeQlPaths.
+
+.PARAMETER codeqlHome
+    The directory holding the CodeQL CLI, e.g. C:\codeql-home.
+
+.PARAMETER codeqlCli
+    The path to a specific codeql.cmd to use, overriding -codeqlHome.
+
+.PARAMETER codeqlVersion
+    The CodeQL CLI version to install with -install.
+
+.PARAMETER codeqlPack
+    The driver query pack, as 'name@version'.
+
+.PARAMETER codeqlSuite
+    A suite name, or the path to a .qls file.
+
+.PARAMETER codeqlOutputDir
+    Where the SARIF files and driver verification logs go. Default "$logDir\codeql".
+
+.PARAMETER codeqlDbDir
+    Where the databases go. Default "$env:LOCALAPPDATA\hts-codeql", which is
+    outside the source tree because a database per configuration and platform is
+    several hundred MB of artifact rather than source.
+
+.PARAMETER codeqlProjectFile
+    The driver project the analysis belongs to, used for the verification log.
+    Default is -projectName when that is a .vcxproj, otherwise the first
+    .vcxproj with a sibling .inf or .inx under -projectPath.
+
+.PARAMETER codeqlDriverName
+    The driver name for the verification log. Default is the TargetName of the
+    resolved project file.
+
+.PARAMETER logDir
+    The build log directory, where the CodeQL console output goes.
+
+.PARAMETER projectPath
+    The directory holding the msbuild project being built.
+
+.PARAMETER projectName
+    The msbuild project file name.
+
+.PARAMETER projectRootPath
+    The project root: the CodeQL source root, the checkout root.
+
+.PARAMETER configurations
+    The configurations about to be built, used only for a Debug warning.
+
+.PARAMETER install
+    Download the CLI and any missing query packs rather than failing.
+
+.EXAMPLE
+    $codeQl = initializeCodeQl -codeqlSuite mustrun -logDir ./logs -projectPath . -projectName my.sln
+#>
+function initializeCodeQl {
+    param(
+        [string] $codeqlHome = $null,
+        [string] $codeqlCli = $null,
+        [string] $codeqlVersion = "2.25.5",
+        [string] $codeqlPack = "microsoft/windows-drivers@1.10.0",
+        [string] $codeqlSuite = "recommended",
+        [string] $codeqlOutputDir = $null,
+        [string] $codeqlDbDir = $null,
+        [string] $codeqlProjectFile = $null,
+        [string] $codeqlDriverName = $null,
+        [string] $logDir = ".",
+        [string] $projectPath = ".",
+        [string] $projectName = $null,
+        [string] $projectRootPath = $null,
+        [string[]] $configurations = @(),
+        [switch] $install
+    )
+    $ErrorActionPreference = 'Stop'
+    $cli = getCodeQlCli -codeqlHome $codeqlHome -codeqlCli $codeqlCli -version $codeqlVersion -install:$install
+    log "using CodeQL CLI $(getCodeQlVersion -codeqlCli $cli) at $cli"
+    getCodeQlPacks -codeqlCli $cli -packs @($codeqlPack) -install:$install
+    $suite = getCodeQlSuiteSpec -pack $codeqlPack -suite $codeqlSuite
+
+    if ([string]::IsNullOrEmpty($codeqlOutputDir)) {
+        $codeqlOutputDir = "$logDir\codeql"
+    }
+    if (!(test-path $codeqlOutputDir)) {
+        $null = mkdir $codeqlOutputDir
+    }
+    $output = Convert-Path $codeqlOutputDir
+
+    if ([string]::IsNullOrEmpty($codeqlDbDir)) {
+        # outside the source tree: a database per configuration and platform is
+        # several hundred MB of artifact, not source.
+        $codeqlDbDir = "$env:LOCALAPPDATA\hts-codeql"
+    }
+    if (!(test-path $codeqlDbDir)) {
+        $null = mkdir $codeqlDbDir
+    }
+    $dbRoot = Convert-Path $codeqlDbDir
+
+    log "codeql databases will be created in $dbRoot"
+    log "codeql sarif results and dvls will be written to $output"
+    if ($configurations -contains "Debug") {
+        log "note: codeql analysis of the Debug configuration is slow, Release is recommended."
+    }
+
+    # the driver project, and the driver name, for the verification log
+    if ([string]::IsNullOrEmpty($codeqlProjectFile)) {
+        if ($projectName -match '\.vcxproj$') {
+            $codeqlProjectFile = Join-Path $projectPath $projectName
+        }
+        else {
+            # prefer a project that looks like a driver, ie one with a sibling
+            # inf/inx file.
+            $candidates = @(Get-ChildItem $projectPath -Recurse -Filter "*.vcxproj" -ErrorAction SilentlyContinue)
+            $driverProj = @($candidates | Where-Object {
+                    @(Get-ChildItem $_.DirectoryName -Filter "*.inf" -ErrorAction SilentlyContinue).Count -gt 0 -or
+                    @(Get-ChildItem $_.DirectoryName -Filter "*.inx" -ErrorAction SilentlyContinue).Count -gt 0
+                })
+            if ($driverProj.Count) {
+                $codeqlProjectFile = $driverProj[0].FullName
+            }
+            elseif ($candidates.Count) {
+                $codeqlProjectFile = $candidates[0].FullName
+            }
+        }
+    }
+    if ([string]::IsNullOrEmpty($codeqlDriverName)) {
+        if (-not [string]::IsNullOrEmpty($codeqlProjectFile) -and (test-path $codeqlProjectFile)) {
+            $codeqlDriverName = [System.IO.Path]::GetFileNameWithoutExtension($codeqlProjectFile)
+            $projText = Get-Content -Raw $codeqlProjectFile
+            if ($projText -match '<TargetName>\s*([^<\s]+)') {
+                $codeqlDriverName = $Matches[1]
+            }
+        }
+        else {
+            $codeqlDriverName = [System.IO.Path]::GetFileNameWithoutExtension($projectName)
+        }
+    }
+
+    # the source root is the checkout root: the primary source files live inside
+    # it, everything outside it is treated as a library, which is what the
+    # driver query suites expect.
+    if ([string]::IsNullOrEmpty($projectRootPath)) {
+        $sourceRoot = $projectPath
+    }
+    else {
+        $sourceRoot = $projectRootPath
+    }
+    log "codeql source root: $sourceRoot, driver project: $codeqlProjectFile, driver name: $codeqlDriverName"
+
+    @{
+        cli         = $cli
+        pack        = $codeqlPack
+        suite       = $suite
+        output      = $output
+        dbRoot      = $dbRoot
+        logDir      = (Convert-Path $logDir)
+        projectFile = $codeqlProjectFile
+        driverName  = $codeqlDriverName
+        sourceRoot  = $sourceRoot
+    }
+}
+
+<#
+.SYNOPSIS
+    Name the CodeQL artifacts for one configuration and platform.
+
+.DESCRIPTION
+    The database, SARIF file, driver verification log and console log for a
+    single pass of the build loop, so that build.ps1 doesn't assemble paths.
+
+.PARAMETER codeQl
+    The hashtable returned by initializeCodeQl.
+
+.PARAMETER config
+    The build configuration, e.g. Release.
+
+.PARAMETER platform
+    The build platform, e.g. x64.
+
+.EXAMPLE
+    $paths = getCodeQlPaths -codeQl $codeQl -config Release -platform x64
+    $paths.sarif
+#>
+function getCodeQlPaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable] $codeQl,
+        [Parameter(Mandatory = $true)]
+        [string] $config,
+        [Parameter(Mandatory = $true)]
+        [string] $platform
+    )
+    $suffix = "$($config)_$($platform.replace(' ', '-'))"
+    $name = "$($codeQl.driverName)_$suffix"
+    @{
+        name     = $name
+        database = "$($codeQl.dbRoot)\${name}_db"
+        sarif    = "$($codeQl.output)\$name.sarif"
+        dvl      = "$($codeQl.output)\$name.DVL.XML"
+        log      = "$($codeQl.logDir)\CodeQL_$suffix.log"
+    }
+}
+
+<#
+.SYNOPSIS
+    Report a CodeQL analysis, and turn its results into a driver verification log.
+
+.DESCRIPTION
+    Summarizes the SARIF file of one configuration and platform: the finding
+    count by severity, and the rules with the most findings, then creates the
+    driver verification log when -dvl is specified. The full CodeQL narration
+    stays in the console log that doBuild wrote.
+
+    Returns the number of findings, or -1 when the analysis produced no SARIF
+    file at all, which is a failure of the analysis rather than of the driver
+    source. The report itself goes to the host, not to the output stream: the
+    caller captures the output stream to get that count, so anything written
+    there would be swallowed by the assignment instead of reaching the console.
+
+.PARAMETER codeQl
+    The hashtable returned by initializeCodeQl.
+
+.PARAMETER paths
+    The hashtable returned by getCodeQlPaths.
+
+.PARAMETER config
+    The build configuration, for the report only.
+
+.PARAMETER platform
+    The build platform, for the report and the verification log architecture.
+
+.PARAMETER dvl
+    Also create the driver verification log.
+
+.PARAMETER failOnResults
+    Report that findings should fail the build.
+
+.PARAMETER maxRules
+    How many rules to list before deferring to the SARIF file. Default 15.
+
+.EXAMPLE
+    $findings = publishCodeQlAnalysis -codeQl $codeQl -paths $paths -config Release -platform x64 -dvl
+#>
+function publishCodeQlAnalysis {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable] $codeQl,
+        [Parameter(Mandatory = $true)]
+        [hashtable] $paths,
+        [string] $config = "",
+        [string] $platform = "",
+        [switch] $dvl,
+        [switch] $failOnResults,
+        [int] $maxRules = 15
+    )
+    $ErrorActionPreference = 'Stop'
+    if (!(test-path $paths.sarif -PathType Leaf)) {
+        Write-Host " CodeQL $config $platform did not produce $($paths.sarif)"
+        return -1
+    }
+    $results = getSarifResults -sarifFile $paths.sarif
+    Write-Host " CodeQL $config $platform results: $($results.total) findings ($($results.error) error, $($results.warning) warning, $($results.note) note)"
+    Write-Host " CodeQL sarif: $($paths.sarif)"
+    $shown = 0
+    foreach ($rule in $results.rules) {
+        if ($shown -ge $maxRules) {
+            Write-Host "  ... $($results.rules.Count - $shown) more rules, see the sarif file"
+            break
+        }
+        Write-Host "  $rule"
+        $shown++
+    }
+    if ($dvl) {
+        $null = newDvl -sarifFile $paths.sarif -driverName $codeQl.driverName `
+            -architecture $platform -projectFile $codeQl.projectFile -outputFile $paths.dvl
+        Write-Host " driver verification log: $($paths.dvl)"
+    }
+    if ($results.total -gt 0 -and $failOnResults) {
+        Write-Host " CodeQL reported $($results.total) findings and -codeqlFailOnResults was specified."
+    }
+    Write-Host " CodeQL console output: $($paths.log)"
+    $results.total
+}
+
 Export-ModuleMember -Function filterWarnings
 Export-ModuleMember -function getCodeQlCli
 Export-ModuleMember -function getCodeQlVersion
@@ -973,6 +1297,9 @@ Export-ModuleMember -function getCodeQlPacks
 Export-ModuleMember -function getCodeQlSuiteSpec
 Export-ModuleMember -function getSarifResults
 Export-ModuleMember -function newDvl
+Export-ModuleMember -function initializeCodeQl
+Export-ModuleMember -function getCodeQlPaths
+Export-ModuleMember -function publishCodeQlAnalysis
 Export-ModuleMember -function Invoke-CmdScript
 Export-ModuleMember -function getVsCmdScripts
 Export-ModuleMember -function doBuild
