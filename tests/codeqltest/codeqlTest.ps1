@@ -81,6 +81,36 @@ try {
     assertEqual "HtsVsp_Debug_ARM64" $paths.name "artifact prefix, other configuration"
     assertEqual "C:\logs\CodeQL_Debug_ARM64.log" $paths.log "console log path, other configuration"
 
+    log "codeql.json tooling description test"
+    $tooling = readCodeQlJson -jsonFile "$root\codeql.test.json"
+    assertEqual (Resolve-Path "$root\codeql.test.json").Path $tooling.file "file read"
+    assertEqual "2.20.1" $tooling.version "cli version"
+    assertEqual "D:\codeql-home" $tooling.home "cli home"
+    assertEqual 2 $tooling.packs.Count "pack count"
+    assertEqual "microsoft/windows-drivers@1.8.0" $tooling.packs[0] "driver pack"
+    assertEqual "microsoft/cpp-queries@0.0.4" $tooling.packs[1] "cpp pack"
+    assertEqual "D:\wdk\dvl.exe" $tooling.dvlExe "dvl path"
+    # a json without a "cli" section, or without the section's keys, must not throw
+    $partial = "$env:TEMP\codeql-partial-test.json"
+    '{ "packs" : [ "microsoft/windows-drivers@1.10.0" ] }' | Set-Content -Path $partial -Encoding utf8
+    try {
+        $t2 = readCodeQlJson -jsonFile $partial
+        assertEqual 1 $t2.packs.Count "pack count, minimal json"
+        assertEqual "" "$($t2.version)" "no cli section leaves the version unset"
+        assertEqual "" "$($t2.dvlExe)" "no dvl section leaves the path unset"
+    }
+    finally {
+        Remove-Item $partial -Force
+    }
+    # with nothing named, the description that ships with the tools is the fallback
+    $shipped = readCodeQlJson
+    assertEqual 2 $shipped.packs.Count "shipped codeql.json pack count"
+    assertEqual "microsoft/cpp-queries@0.0.5" $shipped.packs[1] "shipped codeql.json names both packs"
+    # the suite has to come from the driver pack, whatever the list order
+    assertEqual "microsoft/windows-drivers@1.8.0" (getCodeQlDriverPack -packs $tooling.packs) "driver pack by role"
+    assertEqual "microsoft/windows-drivers@1.8.0" `
+        (getCodeQlDriverPack -packs @("microsoft/cpp-queries@0.0.4", "microsoft/windows-drivers@1.8.0")) "driver pack out of order"
+
     log "publishCodeQlAnalysis return contract test"
     # build.ps1 captures this function's output to get the finding count, so the
     # report has to go to the host: if it went to the output stream the count

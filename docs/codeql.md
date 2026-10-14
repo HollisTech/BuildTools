@@ -3,7 +3,7 @@
 Run CodeQL static analysis of Windows driver source code as part of the build, and optionally create a driver verification log (DVL) from the results.
 
 ```PowerShell
-build.ps1 -codeql [-codeqlSuite <String>] [-codeqlPack <String>] [-codeqlHome <String>] [-codeqlCli <String>] [-codeqlVersion <String>] [-codeqlOutputDir <String>] [-codeqlDbDir <String>] [-codeqlJobs <Int32>] [-codeqlProjectFile <String>] [-codeqlDriverName <String>] [-installCodeQL] [-dvl] [-codeqlFailOnResults] [...common build parameters]
+build.ps1 -codeql [-codeqlSuite <String>] [-codeqlPacks <String[]>] [-codeqlHome <String>] [-codeqlCli <String>] [-codeqlVersion <String>] [-codeqlDvlExe <String>] [-codeqlJsonFile <String>] [-codeqlOutputDir <String>] [-codeqlDbDir <String>] [-codeqlJobs <Int32>] [-codeqlProjectFile <String>] [-codeqlDriverName <String>] [-installCodeQL] [-dvl] [-codeqlFailOnResults] [...common build parameters]
 ```
 
 ## Description
@@ -30,7 +30,7 @@ is graded by WHCP, so findings do not fail the build unless
 
 ## Tooling
 
-Three pieces are needed, none of which is part of a Visual Studio or WDK
+Three components are needed, none of which is part of a Visual Studio or WDK
 install. `codeql.ps1` reports on, and can install, all of them:
 
 ```PowerShell
@@ -38,17 +38,65 @@ install. `codeql.ps1` reports on, and can install, all of them:
 .\codeql.ps1 -install     # download the CLI and any missing query packs
 ```
 
-| piece | where it comes from | where it goes |
+| component | where it comes from | where it goes |
 |---|---|---|
 | CodeQL CLI | `github/codeql-cli-binaries` release zip | `C:\codeql-home\codeql` (`CODEQL_HOME`, `-codeqlHome`, `-codeqlCli`) |
 | driver query pack | `microsoft/windows-drivers@<version>` via `codeql pack download` | `%USERPROFILE%\.codeql\packages` |
+| C/C++ query pack | `microsoft/cpp-queries@<version>` via `codeql pack download` | `%USERPROFILE%\.codeql\packages` |
 | `dvl.exe` | the WDK / eWDK | `C:\Program Files (x86)\Windows Kits\10\Tools\dvl\` |
 
-The CLI version and the query pack version must be a pair from the Microsoft
-version matrix, *Select the appropriate CodeQL version for your driver*
+### Both query packs must be named
+
+The driver pack's `qlpack.yml` declares the C/C++ pack as a dependency
+(`microsoft/cpp-queries: ^0.0.5`), and its query suites reference that pack by
+name, but **the CodeQL CLI does not download a pack's declared dependencies when
+it downloads the pack**. A machine installed with only
+`microsoft/windows-drivers` therefore cannot resolve any driver suite:
+
+```
+A fatal error occurred: The QL pack 'microsoft/cpp-queries@0.0.5' which is
+referenced from ...\microsoft\windows-drivers\1.10.0\windows-driver-suites\mustfix.qls
+cannot be found.
+```
+
+Downloading by suite does not help either - `codeql pack download
+microsoft/windows-drivers:windows-driver-suites/mustrun.qls` reports "Did not
+need to download any packs" and still leaves the C/C++ pack absent. Both packs
+are named in `-codeqlPacks` and in `codeql.json`, and `codeql.ps1` ends its
+report with a suite resolution check that fails when a pack the suite needs is
+missing:
+
+```
+Suite check:       microsoft/windows-drivers:windows-driver-suites/recommended.qls resolves, 106 queries
+```
+
+### codeql.json
+
+The three components can be described in a `codeql.json`, so that a project pins
+its toolchain in one place:
+
+```json
+{
+    "cli"   : { "version" : "2.25.5", "home" : null, "path" : null },
+    "packs" : [ "microsoft/windows-drivers@1.10.0",
+                "microsoft/cpp-queries@0.0.5" ],
+    "dvl"   : { "path" : null }
+}
+```
+
+It is read from `-codeqlJsonFile`, else `<projectRootPath>\codeql.json`, else
+`<htsToolsPath>\codeql.json`, else the one that ships with these tools, so the
+default is the version pair the tools were tested with.
+
+An **explicitly passed parameter overrides the file**, which is the opposite of
+the build parameter file: `codeql.json` describes the toolchain on the machine,
+and a parameter is an operator overriding it for one run. The CLI version and
+the pack versions must be a pair from the Microsoft version matrix, *Select the
+appropriate CodeQL version for your driver*
 (<https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/static-tools-and-codeql>).
-The defaults here are the current general-use pair: CodeQL CLI `2.25.5` with
-`microsoft/windows-drivers@1.10.0` (the `main` / WHCP_26H1 branch pack).
+The shipped defaults are the current general-use pair: CodeQL CLI `2.25.5` with
+`microsoft/windows-drivers@1.10.0` and `microsoft/cpp-queries@0.0.5` (the `main`
+/ WHCP_26H1 branch packs).
 
 ## Query suites
 

@@ -18,7 +18,12 @@ driver source code (`-codeql`), and create a driver verification log from the
 results (`-dvl`).
 
 ## [codeql](docs/codeql.md)
-Install, and report on, the CodeQL tooling used for Windows driver analysis.
+Install, and report on, the three CodeQL components used for Windows driver
+analysis: the CLI, the query packs the driver suites need, and dvl.exe.
+
+[codeql.json](codeql.json) describes those three, so a project pins its
+toolchain in one place and otherwise inherits the versions these tools were
+tested with.
 
 ## [createCab](docs/createCab.md)
 Creates a CAB file from a list of files.

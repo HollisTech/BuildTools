@@ -990,6 +990,13 @@ function newDvl {
 #=====================================================================
 # CodeQL build support
 #
+# The default query packs: the driver pack, and the C/C++ pack its suites
+# reference by name. Both must be installed - see readCodeQlJson.
+$script:defaultCodeQlPacks = @(
+    "microsoft/windows-drivers@1.10.0",
+    "microsoft/cpp-queries@0.0.5"
+)
+#
 # The CodeQL equivalent of the build loop itself: build.ps1 asks these to
 # resolve the tooling once, to name each configuration's artifacts, and to
 # report and log the results. Keeping them here is what keeps build.ps1 the
@@ -998,28 +1005,191 @@ function newDvl {
 
 <#
 .SYNOPSIS
+    Read the CodeQL tooling description from a json file.
+
+.DESCRIPTION
+    The three components a driver CodeQL build needs, describing them in one
+    place instead of on every command line:
+
+        {
+            "cli"   : { "version" : "2.25.5", "home" : null, "path" : null },
+            "packs" : [ "microsoft/windows-drivers@1.10.0",
+                        "microsoft/cpp-queries@0.0.5" ],
+            "dvl"   : { "path" : null }
+        }
+
+    Every entry is optional; an absent or null one leaves the corresponding
+    parameter to supply the value, falling back to the script default.
+
+    Both packs are needed. microsoft/windows-drivers declares
+    microsoft/cpp-queries as a dependency (^0.0.5 in its qlpack.yml), but the
+    CLI does not resolve a pack's declared dependencies when it downloads it,
+    and its query suites reference the cpp-queries pack by name: with only the
+    driver pack installed, resolving any driver suite fails with
+
+        A fatal error occurred: The QL pack 'microsoft/cpp-queries@0.0.5' which
+        is referenced from ..../windows-driver-suites/mustfix.qls cannot be found.
+
+    so both are named here and by -codeqlPacks.
+
+    Note the precedence, which is the opposite of a build parameter json file:
+    an explicitly passed parameter wins over this file, because the file
+    describes the toolchain on the machine and the command line is an operator
+    overriding it for one run.
+
+.PARAMETER jsonFile
+    The json file to read. An explicitly named file that does not exist is an
+    error.
+
+.PARAMETER projectRootPath
+    The project root, searched for codeql.json when -jsonFile is not given, so
+    a project can pin its own toolchain.
+
+.PARAMETER htsToolsPath
+    The build tools directory, searched for codeql.json when the project has
+    none: the versions the tools were tested with.
+
+.EXAMPLE
+    $tooling = readCodeQlJson -projectRootPath . -htsToolsPath ../BuildTools
+#>
+function readCodeQlJson {
+    param(
+        [string] $jsonFile = $null,
+        [string] $projectRootPath = $null,
+        [string] $htsToolsPath = $null
+    )
+    $result = @{
+        file    = $null
+        version = $null
+        home    = $null
+        cli     = $null
+        packs   = $null
+        dvlExe  = $null
+    }
+    $candidates = @()
+    if (-not [string]::IsNullOrEmpty($jsonFile)) {
+        if (!(test-path $jsonFile -PathType Leaf)) {
+            Write-Error "codeql jsonFile: $jsonFile not found."
+            exit 1
+        }
+        $candidates += $jsonFile
+    }
+    else {
+        if (-not [string]::IsNullOrEmpty($projectRootPath)) {
+            $candidates += (Join-Path $projectRootPath "codeql.json")
+        }
+        if (-not [string]::IsNullOrEmpty($htsToolsPath)) {
+            $candidates += (Join-Path $htsToolsPath "codeql.json")
+        }
+        # last resort: the description that ships with these tools, so the
+        # versions the tools were tested with are the default everywhere.
+        if ($MyInvocation.MyCommand.Module) {
+            $candidates += (Join-Path $MyInvocation.MyCommand.Module.ModuleBase "codeql.json")
+        }
+    }
+    $found = @($candidates | Where-Object { test-path $_ -PathType Leaf } | Select-Object -First 1)
+    if (!$found.Count) {
+        return $result
+    }
+    $found = Convert-Path $found[0]
+    $json = Get-Content -Raw $found | ConvertFrom-Json
+    $result.file = $found
+    if ($json.PSObject.Properties.Name -contains 'cli') {
+        $cli = $json.cli
+        if ($cli.PSObject.Properties.Name -contains 'version') { $result.version = $cli.version }
+        if ($cli.PSObject.Properties.Name -contains 'home') { $result.home = $cli.home }
+        if ($cli.PSObject.Properties.Name -contains 'path') { $result.cli = $cli.path }
+    }
+    if ($json.PSObject.Properties.Name -contains 'packs') {
+        $result.packs = @($json.packs)
+    }
+    if ($json.PSObject.Properties.Name -contains 'dvl') {
+        if ($json.dvl.PSObject.Properties.Name -contains 'path') { $result.dvlExe = $json.dvl.path }
+    }
+    log "using CodeQL tooling description: $found"
+    $result
+}
+
+<#
+.SYNOPSIS
+    Pick the pack that carries the Windows driver query suites.
+
+.DESCRIPTION
+    -codeqlPacks holds every pack the analysis needs, in which the driver pack
+    is the one whose suites are run. Named by role rather than by position, so
+    that the list can be reordered or extended.
+
+.PARAMETER packs
+    The pack list, 'name[@version]' entries.
+
+.EXAMPLE
+    getCodeQlDriverPack -packs $codeQl.packs
+#>
+function getCodeQlDriverPack {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]] $packs
+    )
+    $driver = @($packs | Where-Object { $_ -match '^microsoft/windows-drivers' })
+    if ($driver.Count) {
+        return $driver[0]
+    }
+    # anything else: the suite has to name its own pack, so say what was assumed
+    log "no microsoft/windows-drivers pack in the pack list, using the first entry for suite resolution"
+    $packs[0]
+}
+
+<#
+.SYNOPSIS
     Resolve everything a CodeQL build needs, once, before the build loop.
 
 .DESCRIPTION
-    Validates the CodeQL CLI and the driver query pack (installing them when
-    -install is specified), resolves the query suite, prepares the output and
-    database directories, and works out which project file and driver name the
-    analysis belongs to.
+    Validates the CodeQL CLI and the query packs (installing them when -install
+    is specified), resolves the query suite, prepares the output and database
+    directories, and works out which project file and driver name the analysis
+    belongs to.
+
+    Each toolchain value is taken from an explicitly passed parameter, else from
+    the codeql.json tooling description (see readCodeQlJson), else from the
+    built in defaults.
 
     Returns a hashtable that build.ps1 passes on to doBuild for each
     configuration and platform, through getCodeQlPaths.
 
 .PARAMETER codeqlHome
-    The directory holding the CodeQL CLI, e.g. C:\codeql-home.
+    The directory holding the CodeQL CLI, e.g. C:\codeql-home. Default
+    C:\codeql-home, or $env:CODEQL_HOME.
 
 .PARAMETER codeqlCli
     The path to a specific codeql.cmd to use, overriding -codeqlHome.
 
 .PARAMETER codeqlVersion
-    The CodeQL CLI version to install with -install.
+    The CodeQL CLI version to install with -install. Default 2.25.5, the oldest
+    version validated for the 26H1 driver packs.
 
-.PARAMETER codeqlPack
-    The driver query pack, as 'name@version'.
+.PARAMETER codeqlPacks
+    Every query pack the analysis needs, as 'name@version': the driver pack and
+    the C/C++ query pack its suites reference. Default the pair released with
+    the WHCP_26H1 / main branch, microsoft/windows-drivers@1.10.0 and
+    microsoft/cpp-queries@0.0.5.
+
+    Both must be named. The driver pack declares microsoft/cpp-queries as a
+    dependency, but the CLI does not resolve a pack's declared dependencies when
+    it downloads it, and the driver suites reference the cpp-queries pack by
+    name, so a machine with only the driver pack installed fails to resolve any
+    driver suite.
+
+.PARAMETER codeqlDvlExe
+    The path to dvl.exe for the driver verification log. Default is to search
+    the installed WDK.
+
+.PARAMETER jsonFile
+    The codeql.json tooling description to read. Default: <projectRootPath>\
+    codeql.json if it exists, else <htsToolsPath>\codeql.json.
+
+.PARAMETER htsToolsPath
+    The build tools directory, searched for the codeql.json that ships with the
+    tools when the project has none.
 
 .PARAMETER codeqlSuite
     A suite name, or the path to a .qls file.
@@ -1066,8 +1236,11 @@ function initializeCodeQl {
     param(
         [string] $codeqlHome = $null,
         [string] $codeqlCli = $null,
-        [string] $codeqlVersion = "2.25.5",
-        [string] $codeqlPack = "microsoft/windows-drivers@1.10.0",
+        [string] $codeqlVersion = $null,
+        [string[]] $codeqlPacks = $null,
+        [string] $codeqlDvlExe = $null,
+        [string] $jsonFile = $null,
+        [string] $htsToolsPath = $null,
         [string] $codeqlSuite = "recommended",
         [string] $codeqlOutputDir = $null,
         [string] $codeqlDbDir = $null,
@@ -1081,10 +1254,39 @@ function initializeCodeQl {
         [switch] $install
     )
     $ErrorActionPreference = 'Stop'
+    # each toolchain value: an explicitly passed parameter wins, else the
+    # codeql.json description, else the built in default.
+    $tooling = readCodeQlJson -jsonFile $jsonFile -projectRootPath $projectRootPath -htsToolsPath $htsToolsPath
+    if ([string]::IsNullOrEmpty($codeqlVersion) -and -not [string]::IsNullOrEmpty($tooling.version)) {
+        $codeqlVersion = $tooling.version
+    }
+    if ([string]::IsNullOrEmpty($codeqlHome) -and -not [string]::IsNullOrEmpty($tooling.home)) {
+        $codeqlHome = $tooling.home
+    }
+    if ([string]::IsNullOrEmpty($codeqlCli) -and -not [string]::IsNullOrEmpty($tooling.cli)) {
+        $codeqlCli = $tooling.cli
+    }
+    if ([string]::IsNullOrEmpty($codeqlDvlExe) -and -not [string]::IsNullOrEmpty($tooling.dvlExe)) {
+        $codeqlDvlExe = $tooling.dvlExe
+    }
+    if (!$codeqlPacks -or !$codeqlPacks.Count) {
+        if ($tooling.packs -and $tooling.packs.Count) {
+            $codeqlPacks = $tooling.packs
+        }
+        else {
+            $codeqlPacks = $script:defaultCodeQlPacks
+        }
+    }
+    if ([string]::IsNullOrEmpty($codeqlVersion)) {
+        $codeqlVersion = "2.25.5"
+    }
+
     $cli = getCodeQlCli -codeqlHome $codeqlHome -codeqlCli $codeqlCli -version $codeqlVersion -install:$install
     log "using CodeQL CLI $(getCodeQlVersion -codeqlCli $cli) at $cli"
-    getCodeQlPacks -codeqlCli $cli -packs @($codeqlPack) -install:$install
-    $suite = getCodeQlSuiteSpec -pack $codeqlPack -suite $codeqlSuite
+    log "codeql query packs: $($codeqlPacks -join ', ')"
+    getCodeQlPacks -codeqlCli $cli -packs $codeqlPacks -install:$install
+    $driverPack = getCodeQlDriverPack -packs $codeqlPacks
+    $suite = getCodeQlSuiteSpec -pack $driverPack -suite $codeqlSuite
 
     if ([string]::IsNullOrEmpty($codeqlOutputDir)) {
         $codeqlOutputDir = "$logDir\codeql"
@@ -1157,11 +1359,15 @@ function initializeCodeQl {
 
     @{
         cli         = $cli
-        pack        = $codeqlPack
+        version     = $codeqlVersion
+        packs       = $codeqlPacks
+        driverPack  = $driverPack
         suite       = $suite
         output      = $output
         dbRoot      = $dbRoot
         logDir      = (Convert-Path $logDir)
+        dvlExe      = $codeqlDvlExe
+        toolingFile = $tooling.file
         projectFile = $codeqlProjectFile
         driverName  = $codeqlDriverName
         sourceRoot  = $sourceRoot
@@ -1280,7 +1486,8 @@ function publishCodeQlAnalysis {
     }
     if ($dvl) {
         $null = newDvl -sarifFile $paths.sarif -driverName $codeQl.driverName `
-            -architecture $platform -projectFile $codeQl.projectFile -outputFile $paths.dvl
+            -architecture $platform -projectFile $codeQl.projectFile `
+            -outputFile $paths.dvl -dvlExe $codeQl.dvlExe
         Write-Host " driver verification log: $($paths.dvl)"
     }
     if ($results.total -gt 0 -and $failOnResults) {
@@ -1300,6 +1507,8 @@ Export-ModuleMember -function newDvl
 Export-ModuleMember -function initializeCodeQl
 Export-ModuleMember -function getCodeQlPaths
 Export-ModuleMember -function publishCodeQlAnalysis
+Export-ModuleMember -function readCodeQlJson
+Export-ModuleMember -function getCodeQlDriverPack
 Export-ModuleMember -function Invoke-CmdScript
 Export-ModuleMember -function getVsCmdScripts
 Export-ModuleMember -function doBuild
