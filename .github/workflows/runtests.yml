@@ -12,4 +12,9 @@ jobs:
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: >
         ./tests/test1.ps1
+
+    - name: CodeQL support tests
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: >
+        ./tests/codeqltest/codeqlTest.ps1
         

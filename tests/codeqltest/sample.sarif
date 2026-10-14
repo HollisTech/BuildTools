@@ -1,0 +1,52 @@
+{
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "CodeQL",
+                    "rules": [
+                        {
+                            "id": "cpp/test/error-rule",
+                            "shortDescription": { "text": "a rule whose default level is error" },
+                            "defaultConfiguration": { "level": "error" }
+                        },
+                        {
+                            "id": "cpp/test/warning-rule",
+                            "shortDescription": { "text": "a rule whose default level is warning" },
+                            "defaultConfiguration": { "level": "warning" }
+                        },
+                        {
+                            "id": "cpp/test/norulevel-rule",
+                            "shortDescription": { "text": "a rule with no defaultConfiguration, so the sarif default of warning applies" }
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "cpp/test/error-rule",
+                    "ruleIndex": 0,
+                    "message": { "text": "counted as an error, from the rule default" }
+                },
+                {
+                    "ruleId": "cpp/test/warning-rule",
+                    "ruleIndex": 1,
+                    "message": { "text": "counted as a warning, from the rule default" }
+                },
+                {
+                    "ruleId": "cpp/test/warning-rule",
+                    "ruleIndex": 1,
+                    "level": "note",
+                    "message": { "text": "counted as a note, level overridden by the result" }
+                },
+                {
+                    "ruleId": "cpp/test/norulevel-rule",
+                    "ruleIndex": 2,
+                    "message": { "text": "counted as a warning: sarif defaults a rule with no defaultConfiguration to warning" }
+                }
+            ]
+        }
+    ]
+}

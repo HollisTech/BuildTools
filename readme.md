@@ -13,6 +13,13 @@
 ## [build](docs/build.md)
 Build a Visual Studio solution or project using the specified environment.
 
+The build can optionally run [CodeQL](docs/codeql.md) static analysis of the
+driver source code (`-codeql`), and create a driver verification log from the
+results (`-dvl`).
+
+## [codeql](docs/codeql.md)
+Install, and report on, the CodeQL tooling used for Windows driver analysis.
+
 ## [createCab](docs/createCab.md)
 Creates a CAB file from a list of files.
 
