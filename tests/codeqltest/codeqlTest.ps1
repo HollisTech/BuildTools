@@ -29,6 +29,37 @@ function assertEqual {
     }
 }
 
+function assertEndsWith {
+    # for assertions about which file was chosen: the tail of a path is stable,
+    # its root is not (8.3 short form, drive mapping, length)
+    param($suffix, $actual, $what)
+    $a = "$actual"
+    if (!$a.EndsWith("$suffix", [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Error "$what`: expected a path ending '$suffix', got '$a'"
+        $script:status = $false
+    } else {
+        log "$what`: $a"
+    }
+}
+
+function assertPathEqual {
+    # Paths need canonicalizing before comparison: the same file can be named in
+    # 8.3 short form, which is what $env:TEMP is on a CI runner
+    # (C:\Users\RUNNER~1\AppData\Local\Temp), while a resolved path comes back
+    # long. Comparing the strings would then never match.
+    param($expected, $actual, $what)
+    $e = "$expected"
+    $a = "$actual"
+    if ($e -and (Test-Path $e)) { $e = (Get-Item $e).FullName }
+    if ($a -and (Test-Path $a)) { $a = (Get-Item $a).FullName }
+    if ($e -ne $a) {
+        Write-Error "$what`: expected '$e', got '$a'"
+        $script:status = $false
+    } else {
+        log "$what`: $a"
+    }
+}
+
 try {
     log "sarif result summary test"
     $results = getSarifResults -sarifFile "$root\sample.sarif"
@@ -114,8 +145,9 @@ try {
     log "dvl.exe search test"
     # a project tree with WDK nuget packages, the layout a nuget build has:
     # <root>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe
-    $fakeRoot = "$env:TEMP\hts-codeql-dvltest"
-    if (Test-Path $fakeRoot) { Remove-Item -Recurse -Force $fakeRoot }
+    # the root's canonical form, not "$env:TEMP\...": TEMP is an 8.3 short path
+    # on a CI runner, and the search returns long form paths
+    $fakeRoot = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "hts-codeql-dvltest") -Force).FullName
     try {
         foreach ($pkg in @("Microsoft.Windows.WDK.x64.10.0.26100.3323",
                 "Microsoft.Windows.WDK.x64.10.0.28000.2526",
@@ -128,13 +160,18 @@ try {
         $null = mkdir "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.30000.1\c"
         # the architecture being built picks the package, and the newest of that
         # architecture wins
-        assertEqual "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
+        # the assertion is on which package was chosen, ie the tail of the path,
+        # not on its root: a root can be named in 8.3 short form (a CI runner's
+        # $env:TEMP is C:\Users\RUNNER~1\...) and then an exact string comparison
+        # against the long form never matches, which is how this test first
+        # failed on GitHub.
+        assertEndsWith "packages\Microsoft.Windows.WDK.x64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
             (getDvlExe -searchRoot $fakeRoot -architecture x64) "x64 package, newest with a dvl.exe"
-        assertEqual "$fakeRoot\packages\Microsoft.Windows.WDK.ARM64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
+        assertEndsWith "packages\Microsoft.Windows.WDK.ARM64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
             (getDvlExe -searchRoot $fakeRoot -architecture arm64) "arm64 package"
         # an explicitly configured dvl.exe wins over the search
         $configured = "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.26100.3323\c\tools\dvl\dvl.exe"
-        assertEqual $configured `
+        assertPathEqual $configured `
             (getDvlExe -dvlExe $configured -searchRoot $fakeRoot -architecture arm64) "configured path wins"
         # no packages: the installed WDK is the fallback, and a CI runner has
         # neither, which is the -dvl failure path
@@ -147,6 +184,28 @@ try {
         }
         else {
             assertEqual "" "$fallback" "no dvl.exe anywhere returns nothing"
+        }
+        # short and long form of one file must compare equal: this is the
+        # condition the CI runner hit, where $env:TEMP is C:\Users\RUNNER~1\...
+        # and a resolved path comes back C:\Users\runneradmin\...
+        $shortWdk = "C:\PROGRA~2\Windows Kits\10\Tools\dvl\dvl.exe"
+        $longWdk = "${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe"
+        if ((Test-Path $shortWdk -PathType Leaf) -and (Test-Path $longWdk -PathType Leaf)) {
+            assertPathEqual $longWdk $shortWdk "short and long form of one path compare equal"
+            # and it is only the canonical form that makes them equal
+            if ("$shortWdk" -ne "$longWdk") {
+                log "short and long form differ as strings, as expected"
+            }
+            else {
+                Write-Error "this machine has no 8.3 short names (C:\PROGRA~2 not distinct), so the short/long case is not covered here"
+                $script:status = $false
+            }
+        }
+        else {
+            # informational, not a failure: a machine (or runner image) without
+            # 8.3 names cannot exercise this, and the package assertions above
+            # are already immune to the path's root form
+            log "no short-form path available here (C:\PROGRA~2 absent), short/long comparison not exercised"
         }
     }
     finally {
