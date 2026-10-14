@@ -455,6 +455,15 @@ try
     # CodeQL setup. The analysis wraps the build rather than following it, so
     # everything the wrapper needs is resolved once, before the build loop.
     #
+    # the source root is the checkout root: the primary source files live
+    # inside it, everything outside it is treated as a library, which is
+    # what the driver query suites expect.
+    if ([string]::IsNullOrEmpty($projectRootPath)) {
+        $sourceRoot = $projectPath
+    }
+    else {
+        $sourceRoot = $projectRootPath
+    }
     $codeQlCmd = $null
     $codeQlSuiteSpec = $null
     $codeQlOutput = $null
@@ -517,15 +526,7 @@ try
                 $codeqlDriverName = [System.IO.Path]::GetFileNameWithoutExtension($projectName)
             }
         }
-        # the source root is the checkout root: the primary source files live
-        # inside it, everything outside it is treated as a library, which is
-        # what the driver query suites expect.
-        if ([string]::IsNullOrEmpty($projectRootPath)) {
-            $sourceRoot = $projectPath
-        }
-        else {
-            $sourceRoot = $projectRootPath
-        }
+        
         log "codeql source root: $sourceRoot, driver project: $codeqlProjectFile, driver name: $codeqlDriverName"
     }
 
