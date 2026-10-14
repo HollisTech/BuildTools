@@ -61,6 +61,37 @@ try {
         Remove-Item $path -Force
     }
 
+    log "codeql artifact paths test"
+    # the names build.ps1 hands to doBuild, so the build loop itself assembles
+    # nothing: one database, one sarif, one dvl and one console log per
+    # configuration and platform.
+    $codeQlState = @{
+        driverName = "HtsVsp"
+        dbRoot     = "C:\db"
+        output     = "C:\out"
+        logDir     = "C:\logs"
+    }
+    $paths = getCodeQlPaths -codeQl $codeQlState -config Release -platform x64
+    assertEqual "HtsVsp_Release_x64" $paths.name "artifact prefix"
+    assertEqual "C:\db\HtsVsp_Release_x64_db" $paths.database "database path"
+    assertEqual "C:\out\HtsVsp_Release_x64.sarif" $paths.sarif "sarif path"
+    assertEqual "C:\out\HtsVsp_Release_x64.DVL.XML" $paths.dvl "dvl path"
+    assertEqual "C:\logs\CodeQL_Release_x64.log" $paths.log "console log path"
+    $paths = getCodeQlPaths -codeQl $codeQlState -config Debug -platform ARM64
+    assertEqual "HtsVsp_Debug_ARM64" $paths.name "artifact prefix, other configuration"
+    assertEqual "C:\logs\CodeQL_Debug_ARM64.log" $paths.log "console log path, other configuration"
+
+    log "publishCodeQlAnalysis return contract test"
+    # build.ps1 captures this function's output to get the finding count, so the
+    # report has to go to the host: if it went to the output stream the count
+    # would be buried in an array of report lines and the caller's
+    # '$findings -lt 0' would silently be comparing an array.
+    $paths = getCodeQlPaths -codeQl $codeQlState -config Release -platform x64
+    $paths.sarif = "$root\sample.sarif"
+    $pipeline = @(publishCodeQlAnalysis -codeQl $codeQlState -paths $paths -config Release -platform x64)
+    assertEqual 1 $pipeline.Count "output stream carries only the finding count"
+    assertEqual 4 $pipeline[0] "finding count returned"
+
     if ($status) {
         log "codeql tests passed"
         exit 0

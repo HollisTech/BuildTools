@@ -75,6 +75,14 @@ default `$logDir/codeql` (`./logs/codeql` for a default invocation):
 - `<driver>_<config>_<platform>.DVL.XML` - the driver verification log, with
   `-dvl`.
 
+CodeQL's own console output - every step it takes, and every query it
+evaluates - goes to `$logDir/CodeQL_<config>_<platform>.log` instead of the
+build console, which then shows only the tooling it resolved and the finding
+summary. The build prints that path when the analysis starts, so there is
+somewhere to watch while it runs, and again in the summary. Read it when an
+analysis fails; it holds the command line, the extraction and the per-query
+results.
+
 The database lands in `-codeqlDbDir`, default `%LOCALAPPDATA%\hts-codeql`,
 which is outside the source tree because a database per configuration and
 platform is several hundred MB of artifact rather than source:
