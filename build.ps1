@@ -121,7 +121,14 @@
 
 .PARAMETER codeqlDvlExe
     The path to dvl.exe, used to create the driver verification log with -dvl.
-    Default is the dvl.exe of the installed WDK.
+
+    Without it, dvl.exe is searched for, in this order: the project's WDK nuget
+    packages, "<-projectPath or -projectRootPath>\packages\
+    Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe", matching the
+    platform being built and newest version first; then the WDK installed on the
+    machine, "%ProgramFiles(x86)%\Windows Kits\10\Tools\dvl\dvl.exe". A nuget
+    build - and a CI runner, which has no installed WDK - only has the former,
+    which is also the WDK the driver was built against.
 
 .PARAMETER codeqlJsonFile
     The codeql.json that describes the three CodeQL components - the CLI, the
@@ -501,7 +508,7 @@ try
             -codeqlProjectFile $codeqlProjectFile -codeqlDriverName $codeqlDriverName `
             -logDir $logDir -projectPath $projectPath -projectName $projectName `
             -projectRootPath $projectRootPath -configurations $configurations `
-            -install:$installCodeQL
+            -dvl:$dvl -install:$installCodeQL
     }
 
     if (-not $noNugetRestore) {
