@@ -181,26 +181,18 @@ try {
         Write-Output "  suite $($suiteName.PadRight(11)) $(getCodeQlSuiteSpec -pack $driverPack -suite $suiteName)"
     }
 
-    # 3. dvl.exe
-    $found = @()
-    if (-not [string]::IsNullOrEmpty($dvlExe)) {
-        $found = @(@($dvlExe) | Where-Object { test-path $_ -PathType Leaf })
-        if (!$found.Count) {
-            Write-Output "dvl.exe:           NOT found at the configured $dvlExe"
-            $status = 1
-        }
+    # 3. dvl.exe: the project's WDK nuget packages, else the installed WDK
+    $projectRoot = (Get-Location).Path
+    $resolvedDvl = getDvlExe -dvlExe $dvlExe -searchRoot @($projectRoot)
+    if ([string]::IsNullOrEmpty($resolvedDvl)) {
+        Write-Output "dvl.exe:           NOT found"
+        Write-Output "  looked for a WDK nuget package at <here>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe,"
+        Write-Output "  and an installed WDK at ${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe."
+        Write-Output "  Restore the WDK nuget package (nuget restore, a nuget build), or set dvl.path in codeql.json / -dvlExe."
+        $status = 1
     }
     else {
-        # ships with the WDK (the 10.0.22621.0+ WDK), not with Visual Studio
-        $found = @(@("${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe") |
-            Where-Object { test-path $_ -PathType Leaf })
-    }
-    if ($found.Count) {
-        Write-Output "dvl.exe:           $($found[0])"
-    }
-    elseif ([string]::IsNullOrEmpty($dvlExe)) {
-        Write-Output "dvl.exe:           NOT found; install the WDK, -dvl needs it"
-        $status = 1
+        Write-Output "dvl.exe:           $resolvedDvl"
     }
 
     # the suites have to resolve, which needs every pack they reference: this is

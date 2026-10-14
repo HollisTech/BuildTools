@@ -910,7 +910,12 @@ function newDvl {
         [string] $architecture = "x64",
         [string] $projectFile = $null,
         [string] $outputFile = $null,
-        [string] $dvlExe = $null
+        [string] $dvlExe = $null,
+        <#
+        Where to look for dvl.exe when -dvlExe is not given: the project roots
+        whose packages directory may hold the WDK nuget packages. See getDvlExe.
+        #>
+        [string[]] $projectSearchRoot = @()
     )
     $ErrorActionPreference = 'Stop'
     if (!(test-path $sarifFile -PathType Leaf)) {
@@ -918,21 +923,13 @@ function newDvl {
         exit 1
     }
     if ([string]::IsNullOrEmpty($dvlExe)) {
-        # dvl.exe ships with the WDK / eWDK
-        $candidates = @()
-        if ($env:WDKContentRoot) {
-            $candidates += "$($env:WDKContentRoot)Tools\dvl\dvl.exe"
-        }
-        $candidates += @("${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe")
-        foreach ($candidate in $candidates) {
-            if (test-path $candidate -PathType Leaf) {
-                $dvlExe = $candidate
-                break
-            }
-        }
+        $dvlExe = getDvlExe -searchRoot @($projectSearchRoot) -architecture $architecture
     }
     if ([string]::IsNullOrEmpty($dvlExe) -or !(test-path $dvlExe -PathType Leaf)) {
-        Write-Error "dvl.exe not found. Install the WDK, mount an eWDK, or pass -dvlExe."
+        Write-Error ("dvl.exe not found. It ships with the WDK: look in the installed WDK " +
+            "(${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl), or in the project's WDK nuget " +
+            "packages (<root>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl). " +
+            "Pass -dvlExe, or set it in codeql.json.")
         exit 1
     }
     switch ($architecture.ToLower()) {
@@ -1112,6 +1109,91 @@ function readCodeQlJson {
 
 <#
 .SYNOPSIS
+    Find dvl.exe, which creates the driver verification log.
+
+.DESCRIPTION
+    dvl.exe ships with the WDK, and where it lives depends on how the WDK got
+    onto the machine:
+
+      * a WDK installed on the machine (Visual Studio + WDK):
+        "%ProgramFiles(x86)%\Windows Kits\10\Tools\dvl\dvl.exe"
+      * a WDK restored from nuget, which is what a nuget build uses, and what a
+        CI runner has instead of an installed WDK:
+        "<root>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe"
+
+    Both are searched, the nuget packages first: a project that restored the WDK
+    package built against that WDK, so its dvl.exe is the one that matches the
+    driver being logged, while the machine's installed WDK may be any version
+    (measured here: 10.0.22621-era installed, 10.0.28000.2526 in the packages).
+    Packages are ranked by architecture match when -architecture is given, then
+    newest first.
+
+    Returns the path, or $null when nothing is found; a -dvlExe that was given
+    but does not exist is an error, because an explicitly configured path being
+    wrong is worth failing on.
+
+.PARAMETER dvlExe
+    An explicitly configured dvl.exe, which wins over the search.
+
+.PARAMETER searchRoot
+    Project roots to search. "<root>\packages" is tried, then "<root>" itself.
+
+.PARAMETER architecture
+    x64, x86, arm or arm64, used to prefer the matching WDK package.
+
+.EXAMPLE
+    $dvl = getDvlExe -searchRoot . -architecture x64
+#>
+function getDvlExe {
+    param(
+        [string] $dvlExe = $null,
+        [string[]] $searchRoot = @(),
+        [string] $architecture = $null
+    )
+    $ErrorActionPreference = 'Stop'
+    if (-not [string]::IsNullOrEmpty($dvlExe)) {
+        if (!(test-path $dvlExe -PathType Leaf)) {
+            Write-Error "dvlExe: '$dvlExe' not found."
+            exit 1
+        }
+        return (Convert-Path $dvlExe)
+    }
+
+    # the WDK nuget packages, which is what a nuget build and a CI runner has
+    foreach ($root in $searchRoot) {
+        if ([string]::IsNullOrEmpty($root)) { continue }
+        foreach ($packagesDir in @((Join-Path $root "packages"), $root)) {
+            if (!(test-path $packagesDir -PathType Container)) { continue }
+            $wdkPackages = @(Get-ChildItem $packagesDir -Directory -Filter "Microsoft.Windows.WDK.*" -ErrorAction SilentlyContinue)
+            if (!$wdkPackages.Count) { continue }
+            $ranked = @($wdkPackages | Sort-Object -Property @{
+                    # the package for the architecture being built comes first
+                    Expression = { if ($architecture -and $_.Name -match ('\.' + [regex]::Escape($architecture) + '\.')) { 0 } else { 1 } }
+                }, @{
+                    Expression = { $_.Name }
+                    Descending = $true
+                })
+            foreach ($package in $ranked) {
+                $candidate = Join-Path $package.FullName "c\tools\dvl\dvl.exe"
+                if (test-path $candidate -PathType Leaf) {
+                    log "using dvl.exe from the WDK nuget package $($package.Name)"
+                    return (Convert-Path $candidate)
+                }
+            }
+        }
+    }
+
+    # a WDK installed on the machine, or an eWDK that exported its content root
+    $installed = "${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe"
+    if (test-path $installed -PathType Leaf) {
+        log "using the installed WDK's dvl.exe"
+        return (Convert-Path $installed)
+    }
+    $null
+}
+
+<#
+.SYNOPSIS
     Pick the pack that carries the Windows driver query suites.
 
 .DESCRIPTION
@@ -1251,6 +1333,7 @@ function initializeCodeQl {
         [string] $projectName = $null,
         [string] $projectRootPath = $null,
         [string[]] $configurations = @(),
+        [switch] $dvl,
         [switch] $install
     )
     $ErrorActionPreference = 'Stop'
@@ -1357,6 +1440,27 @@ function initializeCodeQl {
     }
     log "codeql source root: $sourceRoot, driver project: $codeqlProjectFile, driver name: $codeqlDriverName"
 
+    <#
+    The driver verification log needs dvl.exe. Check for it now, rather than
+    after a fifteen minute analysis, but resolve it per configuration and
+    platform later: the package to use depends on the architecture being built.
+    #>
+    $dvlSearchRoot = @($projectPath, $projectRootPath) | Where-Object { -not [string]::IsNullOrEmpty($_) }
+    $dvlAvailable = getDvlExe -dvlExe $codeqlDvlExe -searchRoot $dvlSearchRoot
+    if ([string]::IsNullOrEmpty($dvlAvailable)) {
+        if ($dvl) {
+            Write-Error ("dvl.exe not found, and -dvl was specified. It ships with the WDK: the " +
+                "installed WDK's Tools\dvl, or the project's WDK nuget packages under " +
+                "<root>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl. Pass -codeqlDvlExe, " +
+                "or set dvl.path in codeql.json.")
+            exit 1
+        }
+        log "dvl.exe not found; -dvl will fail unless a WDK is installed or restored"
+    }
+    else {
+        log "dvl.exe available: $dvlAvailable"
+    }
+
     @{
         cli         = $cli
         version     = $codeqlVersion
@@ -1367,6 +1471,7 @@ function initializeCodeQl {
         dbRoot      = $dbRoot
         logDir      = (Convert-Path $logDir)
         dvlExe      = $codeqlDvlExe
+        searchRoot  = $dvlSearchRoot
         toolingFile = $tooling.file
         projectFile = $codeqlProjectFile
         driverName  = $codeqlDriverName
@@ -1487,7 +1592,7 @@ function publishCodeQlAnalysis {
     if ($dvl) {
         $null = newDvl -sarifFile $paths.sarif -driverName $codeQl.driverName `
             -architecture $platform -projectFile $codeQl.projectFile `
-            -outputFile $paths.dvl -dvlExe $codeQl.dvlExe
+            -outputFile $paths.dvl -dvlExe $codeQl.dvlExe -projectSearchRoot $codeQl.searchRoot
         Write-Host " driver verification log: $($paths.dvl)"
     }
     if ($results.total -gt 0 -and $failOnResults) {
@@ -1509,6 +1614,7 @@ Export-ModuleMember -function getCodeQlPaths
 Export-ModuleMember -function publishCodeQlAnalysis
 Export-ModuleMember -function readCodeQlJson
 Export-ModuleMember -function getCodeQlDriverPack
+Export-ModuleMember -function getDvlExe
 Export-ModuleMember -function Invoke-CmdScript
 Export-ModuleMember -function getVsCmdScripts
 Export-ModuleMember -function doBuild

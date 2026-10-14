@@ -43,7 +43,7 @@ install. `codeql.ps1` reports on, and can install, all of them:
 | CodeQL CLI | `github/codeql-cli-binaries` release zip | `C:\codeql-home\codeql` (`CODEQL_HOME`, `-codeqlHome`, `-codeqlCli`) |
 | driver query pack | `microsoft/windows-drivers@<version>` via `codeql pack download` | `%USERPROFILE%\.codeql\packages` |
 | C/C++ query pack | `microsoft/cpp-queries@<version>` via `codeql pack download` | `%USERPROFILE%\.codeql\packages` |
-| `dvl.exe` | the WDK / eWDK | `C:\Program Files (x86)\Windows Kits\10\Tools\dvl\` |
+| `dvl.exe` | the WDK, installed or restored from nuget | an installed WDK's `Windows Kits\10\Tools\dvl\`, or `packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\` |
 
 ### Both query packs must be named
 
@@ -69,6 +69,28 @@ missing:
 ```
 Suite check:       microsoft/windows-drivers:windows-driver-suites/recommended.qls resolves, 106 queries
 ```
+
+### Where dvl.exe is found
+
+`dvl.exe` ships with the WDK, and its location depends on how the WDK got onto
+the machine. It is looked for in this order:
+
+1. `-codeqlDvlExe`, or `dvl.path` in `codeql.json`, if set;
+2. the project's WDK nuget packages -
+   `<projectPath or projectRootPath>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe` -
+   preferring the package for the platform being built, then the newest version.
+   The WDK nuget package mirrors a `c\` filesystem root, which is where the `c\`
+   comes from;
+3. the WDK installed on the machine,
+   `%ProgramFiles(x86)%\Windows Kits\10\Tools\dvl\dvl.exe`.
+
+A nuget build, and a CI runner, only has (2) - `codeql.ps1` used to assume (3)
+and reported `dvl.exe: NOT found` on GitHub, which is what (2) fixes. It also
+matters for correctness: the installed WDK may be any version, while the package
+is the WDK the driver was built against (measured here: 10.0.22621-era installed
+against 10.0.28000.2526 in the packages, and the two produce different DVLs from
+the same SARIF). With `-dvl` and no dvl.exe anywhere, `build.ps1` fails at setup
+rather than after the analysis.
 
 ### codeql.json
 

@@ -111,6 +111,48 @@ try {
     assertEqual "microsoft/windows-drivers@1.8.0" `
         (getCodeQlDriverPack -packs @("microsoft/cpp-queries@0.0.4", "microsoft/windows-drivers@1.8.0")) "driver pack out of order"
 
+    log "dvl.exe search test"
+    # a project tree with WDK nuget packages, the layout a nuget build has:
+    # <root>\packages\Microsoft.Windows.WDK.<arch>.<version>\c\tools\dvl\dvl.exe
+    $fakeRoot = "$env:TEMP\hts-codeql-dvltest"
+    if (Test-Path $fakeRoot) { Remove-Item -Recurse -Force $fakeRoot }
+    try {
+        foreach ($pkg in @("Microsoft.Windows.WDK.x64.10.0.26100.3323",
+                "Microsoft.Windows.WDK.x64.10.0.28000.2526",
+                "Microsoft.Windows.WDK.ARM64.10.0.28000.2526")) {
+            $dir = "$fakeRoot\packages\$pkg\c\tools\dvl"
+            $null = mkdir $dir
+            Set-Content -Path "$dir\dvl.exe" -Value "fake" -Encoding ascii
+        }
+        # a package that is present but has no dvl.exe must not win on version
+        $null = mkdir "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.30000.1\c"
+        # the architecture being built picks the package, and the newest of that
+        # architecture wins
+        assertEqual "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
+            (getDvlExe -searchRoot $fakeRoot -architecture x64) "x64 package, newest with a dvl.exe"
+        assertEqual "$fakeRoot\packages\Microsoft.Windows.WDK.ARM64.10.0.28000.2526\c\tools\dvl\dvl.exe" `
+            (getDvlExe -searchRoot $fakeRoot -architecture arm64) "arm64 package"
+        # an explicitly configured dvl.exe wins over the search
+        $configured = "$fakeRoot\packages\Microsoft.Windows.WDK.x64.10.0.26100.3323\c\tools\dvl\dvl.exe"
+        assertEqual $configured `
+            (getDvlExe -dvlExe $configured -searchRoot $fakeRoot -architecture arm64) "configured path wins"
+        # no packages: the installed WDK is the fallback, and a CI runner has
+        # neither, which is the -dvl failure path
+        $emptyRoot = "$fakeRoot\no-packages"
+        $null = mkdir $emptyRoot
+        $fallback = getDvlExe -searchRoot $emptyRoot
+        $installedWdk = "${env:ProgramFiles(x86)}\Windows Kits\10\Tools\dvl\dvl.exe"
+        if (Test-Path $installedWdk -PathType Leaf) {
+            assertEqual (Convert-Path $installedWdk) $fallback "installed WDK is the fallback"
+        }
+        else {
+            assertEqual "" "$fallback" "no dvl.exe anywhere returns nothing"
+        }
+    }
+    finally {
+        if (Test-Path $fakeRoot) { Remove-Item -Recurse -Force $fakeRoot }
+    }
+
     log "publishCodeQlAnalysis return contract test"
     # build.ps1 captures this function's output to get the finding count, so the
     # report has to go to the host: if it went to the output stream the count
