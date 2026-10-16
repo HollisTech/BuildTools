@@ -274,13 +274,21 @@ function filterWarnings {
     # }
     param(
         $warningFile,
-        $projectPath)
+        $projectPath,
+        $projectRoot)
     $regex = $null
     # customize the allowed warnings here
     # the general pattern for c++ warnings is ':\bwarning [A-Z]+([0-9]{4}):'
     # note you need to escape '\b' in the json file as '\\b'
     $jsonFile = $projectPath + "/allowed-warnings.json"
-    if (test-path $jsonFile) {
+    if (!(test-path $jsonFile)) {
+        $jsonFile = $projectRoot + "/allowed-warnings.json"
+        if (!(test-path $jsonFile)) {
+            $jsonFile =$null
+        }
+    }
+    if ($jsonFile) {
+        log "filtering additional warnings using $jsonFile"
         $allowed = Get-Content $jsonFile | ConvertFrom-Json
         if ( "allowedWarnings" -in $allowed.PSobject.Properties.Name) {
             $allowed.allowedWarnings | ForEach-Object {

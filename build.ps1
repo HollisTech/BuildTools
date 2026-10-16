@@ -591,7 +591,7 @@ try
             }
             if (Test-Path $warnlog) {
                 if((Get-Item $warnlog).length -gt 0){
-                    $badWarnings = @(filterWarnings -warningFile $warnlog -projectPath $projectPath)
+                    $badWarnings = @(filterWarnings -warningFile $warnlog -projectPath $projectPath -projectRoot $projectRootPath)
                     if ($badWarnings.Count) {
                         Write-Output " There were unexpected warnings in the $config $platform $target Build."
                         Write-Output " Warnings:"
